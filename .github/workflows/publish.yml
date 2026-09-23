@@ -1,4 +1,5 @@
-# Publishes to PyPI when a version tag is pushed, e.g. `git tag v0.1.0 && git push origin v0.1.0`.
+# Publishes to PyPI whenever a tag is created: pushed (`git tag 0.1.0 && git push origin 0.1.0`)
+# or created on GitHub (e.g. with a new release). Tags may carry a leading "v" (v0.1.0).
 # Uses PyPI trusted publishing (OIDC): no API token is stored anywhere. Configure it on PyPI:
 # project ponyglot → Settings → Publishing → GitHub: this repository, workflow "publish.yml",
 # environment "pypi". Actions are pinned to commit SHAs; update them deliberately.
@@ -6,7 +7,7 @@ name: Publish to PyPI
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["*"]
 
 permissions:
   contents: read
@@ -22,7 +23,7 @@ jobs:
       - name: Check that the tag matches the project version
         run: |
           version="$(uv version --short)"
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+          if [ "$version" != "${GITHUB_REF_NAME#v}" ]; then
             echo "::error::Tag $GITHUB_REF_NAME doesn't match version $version in pyproject.toml"
             exit 1
           fi
