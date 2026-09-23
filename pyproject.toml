@@ -1,0 +1,24 @@
+[build-system]
+requires = ["uv_build>=0.8,<0.13"]
+build-backend = "uv_build"
+
+[project]
+name = "ponyglot"
+version = "0.0.1"
+description = "Ponyglot core: one translation layer for your Django stack (API client, sync, django-parler and django-modeltranslation adapters)."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [{ name = "Fabian Braun", email = "hello@ponyglot.app" }]
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Framework :: Django",
+
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Localization",
+]
+
+[project.urls]
+Homepage = "https://ponyglot.app"
