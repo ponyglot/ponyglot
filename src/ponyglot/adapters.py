@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, field
 from django.apps import apps
 from django.db import models
 from django.utils import translation
+from django.utils.text import slugify
 
 from .conf import get_config
 
@@ -174,6 +175,10 @@ class ModelAdapter(Adapter):
         """Store `{field_name: text}` as `language` and save."""
         raise NotImplementedError
 
+    def slug_taken(self, obj, field_name, language, slug):
+        """Whether another object already uses `slug` in `language`."""
+        raise NotImplementedError
+
     # --- Common behaviour ----------------------------------------------------------------
 
     def synced_models(self):
@@ -200,6 +205,56 @@ class ModelAdapter(Adapter):
                 continue
             result[name] = model_field
         return result
+
+    def slug_fields(self, model):
+        """`{slug field name: (model field, source field name)}` of translated slugs.
+
+        Slugs aren't sent to the cloud (engines translate `delta-sync-explained` poorly);
+        they're derived from the applied title instead (`slug_values`). A slug is filled when
+        empty and follows its title while it was derived from it; hand-written slugs stay.
+        """
+        config = get_config()
+        synced = self.fields(model)
+        titles = [name for name in synced if kind_for(name) == "title"]
+        result = {}
+        for name in self.translated_field_names(model):
+            model_field = self._model_field(model, name)
+            label = f"{model._meta.label_lower}.{name}"
+            if not isinstance(model_field, models.SlugField) or label in config.exclude_fields:
+                continue
+            source = config.slug_sources.get(label) or (titles[0] if titles else None)
+            if source in synced:
+                result[name] = (model_field, source)
+        return result
+
+    def slug_values(self, obj, language, values):
+        """Slugs to write along with `values` (`{field: text}` about to be applied)."""
+        updates = {}
+        for name, (model_field, source) in self.slug_fields(type(obj)).items():
+            if source not in values:
+                continue
+            allow_unicode = getattr(model_field, "allow_unicode", False)
+            current = self.target_value(obj, name, language) or ""
+            old_title = self.target_value(obj, source, language) or ""
+            if current and current != slugify(old_title, allow_unicode=allow_unicode):
+                continue  # written by hand: keep it
+            slug = self._unique_slug(obj, name, language, model_field, values[source])
+            if slug and slug != current:
+                updates[name] = slug
+        return updates
+
+    def _unique_slug(self, obj, name, language, model_field, text):
+        allow_unicode = getattr(model_field, "allow_unicode", False)
+        max_length = model_field.max_length or 50
+        base = slugify(text, allow_unicode=allow_unicode)[:max_length].strip("-")
+        if not base:
+            return ""
+        slug, number = base, 2
+        while self.slug_taken(obj, name, language, slug):
+            suffix = f"-{number}"
+            slug = base[: max_length - len(suffix)].rstrip("-") + suffix
+            number += 1
+        return slug
 
     def _order_key(self, model):
         def key(name):

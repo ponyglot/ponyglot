@@ -96,6 +96,7 @@ def apply(suggestions, user=None, texts=None):
                 values[suggestion.field] = suggestion.applied_text
                 done.append(suggestion)
             if values:
+                values.update(adapter.slug_values(obj, language, values))
                 adapter.write(obj, language, values)
             for suggestion in done:
                 suggestion.status = SuggestionStatus.APPLIED

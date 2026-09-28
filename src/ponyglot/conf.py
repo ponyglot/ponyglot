@@ -12,6 +12,8 @@ Optional keys:
 - `EXCLUDE_MODELS`: `["app_label.ModelName", …]` never synced.
 - `EXCLUDE_FIELDS`: `["app_label.ModelName.field", …]` never synced.
 - `FIELD_FORMATS`: `{"app_label.ModelName.field": "html"}` overrides the detected format.
+- `SLUG_SOURCES`: `{"app_label.ModelName.slug": "title"}`, the field a translated slug follows
+  (default: the model's first title-like field). Slugs in `EXCLUDE_FIELDS` aren't touched.
 - `TIMEOUT`: seconds per API request (default 30).
 - `BATCH_SIZE`: units per push request (default 50, at most 100).
 """
@@ -32,6 +34,7 @@ class Config:
     exclude_models: frozenset
     exclude_fields: frozenset
     field_formats: dict
+    slug_sources: dict
     timeout: float
     batch_size: int
 
@@ -52,6 +55,7 @@ def get_config():
         exclude_models=frozenset(_label(m) for m in options.get("EXCLUDE_MODELS", ())),
         exclude_fields=frozenset(_label(f) for f in options.get("EXCLUDE_FIELDS", ())),
         field_formats={_label(k): v for k, v in options.get("FIELD_FORMATS", {}).items()},
+        slug_sources={_label(k): v for k, v in options.get("SLUG_SOURCES", {}).items()},
         timeout=float(options.get("TIMEOUT", 30)),
         batch_size=max(1, min(100, int(options.get("BATCH_SIZE", 50)))),
     )

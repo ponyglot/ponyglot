@@ -24,6 +24,7 @@ class Product(models.Model):
     """A modeltranslation model (see translation.py)."""
 
     name = models.CharField(max_length=100)
+    slug = models.SlugField(max_length=12, blank=True)
     description = models.TextField(blank=True)
     sku = models.CharField(max_length=20, blank=True)
 

@@ -57,6 +57,10 @@ class ModeltranslationAdapter(ModelAdapter):
             if any(self.target_value(obj, name, language) for name in self.fields(type(obj)))
         ]
 
+    def slug_taken(self, obj, field_name, language, slug):
+        column = self._column(field_name, language)
+        return type(obj)._default_manager.filter(**{column: slug}).exclude(pk=obj.pk).exists()
+
     def write(self, obj, language, values):
         columns = []
         for field_name, text in values.items():

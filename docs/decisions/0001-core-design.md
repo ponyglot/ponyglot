@@ -29,7 +29,14 @@ contract is the cloud's API v1 (ponyglot-cloud `docs/api.md`); its fingerprint r
    `ponyglot sync`.
 6. **Model adapters (parler, modeltranslation)** discover models automatically (every model the
    library knows) with `EXCLUDE_MODELS` / `EXCLUDE_FIELDS`. Text fields only; slugs, URLs,
-   emails and fields with choices are skipped (translating a slug changes URLs) *[owner]*.
+   emails and fields with choices are skipped. **Slugs** are never sent to engines (they
+   translate `delta-sync-explained` poorly); the target slug is always derived
+   from the applied title: filled when empty, following the title while it was derived from
+   it, hand-written slugs kept, unique per language. Django's URL resolver only matches the
+   pattern; views find the object by the active language's slug (django-parler's
+   `TranslatableSlugMixin`), so a changed slug still reaches the same object (decided by the
+   owner, 2026-09-28). Old URLs in that language break without redirects; `EXCLUDE_FIELDS`
+   opts a slug out.
    Unit key `<adapter>:<app_label>.<model_name>:<pk>`, segment key = field name.
    Format: `html` for rich-text field classes (djangocms-text, CKEditor) and text fields whose
    value is markup; otherwise `plain`. `FIELD_FORMATS` overrides it.

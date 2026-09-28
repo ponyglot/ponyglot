@@ -19,11 +19,11 @@ pip install "ponyglot[parler]"            # or ponyglot[modeltranslation]
 ```python
 INSTALLED_APPS += [
     "ponyglot",
-    "ponyglot.contrib.parler",            # or "ponyglot.contrib.modeltranslation"
+    "ponyglot.contrib.parler",  # or "ponyglot.contrib.modeltranslation"
 ]
 PONYGLOT = {
-    "API_KEY": env("PONYGLOT_API_KEY"),   # create one for this site in the dashboard
-    "SOURCE_LANGUAGE": "en",              # default: LANGUAGE_CODE
+    "API_KEY": env("PONYGLOT_API_KEY"),  # create one for this site in the dashboard
+    "SOURCE_LANGUAGE": "en",  # default: LANGUAGE_CODE
 }
 ```
 
@@ -73,8 +73,24 @@ corrections) feed the translation memory.
 | `EXCLUDE_MODELS` | `[]` | e.g. `["shop.InternalNote"]` |
 | `EXCLUDE_FIELDS` | `[]` | e.g. `["blog.Post.subtitle"]` |
 | `FIELD_FORMATS` | detected | e.g. `{"blog.Post.lead": "html"}` |
+| `SLUG_SOURCES` | first title field | the field a translated slug follows, e.g. `{"blog.Post.slug": "headline"}` |
 | `TIMEOUT` | `30` | seconds per request |
 | `BATCH_SIZE` | `50` | units per push (≤ 100) |
+
+## Translated slugs
+
+Slugs aren't sent for translation. Applying a translated title also sets the target-language
+slug (`slugify`, unique per language, within `max_length`):
+
+- an empty slug is filled,
+- a slug that was derived from the old title follows the new one,
+- a slug written by hand stays.
+
+Your views must find objects by the slug of the active language, e.g. with django-parler's
+`TranslatableSlugMixin` (it also redirects fallback-language URLs) under `i18n_patterns`, and
+link other languages with `{% get_translated_url %}`. When a slug follows a changed title, the
+object's old URL in that language stops working unless you add a redirect. To keep a model's
+slugs out of this, list them in `EXCLUDE_FIELDS`.
 
 ## Development
 

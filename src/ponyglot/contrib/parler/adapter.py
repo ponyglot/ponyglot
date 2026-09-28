@@ -58,6 +58,14 @@ class ParlerAdapter(ModelAdapter):
         with switch_language(obj, get_config().source_language):
             return super().label(obj)
 
+    def slug_taken(self, obj, field_name, language, slug):
+        meta = obj._parler_meta._get_extension_by_field(field_name)
+        return (
+            meta.model._default_manager.filter(language_code=language, **{field_name: slug})
+            .exclude(master=obj)
+            .exists()
+        )
+
     def write(self, obj, language, values):
         obj.set_current_language(language)
         for field_name, text in values.items():
