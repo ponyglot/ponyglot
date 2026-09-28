@@ -4,21 +4,54 @@ build-backend = "uv_build"
 
 [project]
 name = "ponyglot"
-version = "0.0.1"
+version = "0.1.0.dev0"
 description = "Ponyglot core: one translation layer for your Django stack (API client, sync, django-parler and django-modeltranslation adapters)."
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [{ name = "Fabian Braun", email = "hello@ponyglot.app" }]
 requires-python = ">=3.10"
+dependencies = ["Django>=4.2"]
 classifiers = [
-  "Development Status :: 1 - Planning",
+  "Development Status :: 2 - Pre-Alpha",
   "Framework :: Django",
-
+  "Framework :: Django :: 4.2",
+  "Framework :: Django :: 5.2",
+  "Framework :: Django :: 6.0",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Topic :: Software Development :: Localization",
 ]
 
+[project.optional-dependencies]
+parler = ["django-parler>=2.3"]
+modeltranslation = ["django-modeltranslation>=0.18"]
+
 [project.urls]
 Homepage = "https://ponyglot.app"
+Documentation = "https://docs.ponyglot.app"
+
+[dependency-groups]
+dev = [
+  "django-modeltranslation>=0.18",
+  "django-parler>=2.3",
+  "pytest>=8",
+  "pytest-django>=4.9",
+  "ruff>=0.12",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.settings"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "DJ", "S", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+"src/ponyglot/migrations/**" = ["E501"]

@@ -1,0 +1,332 @@
+"""Adapters map a site's content to units and segments (API v1) and write translations back.
+
+Every adapter owns an `external_key` prefix (its `name`, e.g. `parler:`). The core registers
+the installed adapters, marks their objects dirty when they change, pushes snapshots and hands
+each pulled result to the adapter that owns it. `ModelAdapter` covers libraries that keep
+translations on model fields (django-parler, django-modeltranslation); django CMS and Wagtail
+adapters live in their own packages.
+"""
+
+import re
+from dataclasses import asdict, dataclass, field
+
+from django.apps import apps
+from django.db import models
+from django.utils import translation
+
+from .conf import get_config
+
+KEY_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,255}$")
+# Rich-text field classes from common editors (djangocms-text, CKEditor, TinyMCE, Wagtail).
+HTML_FIELD_CLASSES = {
+    "HTMLField",
+    "RichTextField",
+    "RichTextUploadingField",
+    "CKEditor5Field",
+    "TinyMCEField",
+}
+_MARKUP = re.compile(r"^\s*<[a-zA-Z][^>]*>.*</[a-zA-Z0-9]+>\s*$", re.DOTALL)
+KIND_HINTS = (
+    ("meta_description", "meta_description"),
+    ("meta_title", "title"),
+    ("seo_title", "title"),
+    ("title", "title"),
+    ("headline", "title"),
+    ("name", "title"),
+    ("alt", "alt_text"),
+    ("caption", "caption"),
+    ("link_text", "link_text"),
+    ("description", "body"),
+    ("abstract", "body"),
+    ("body", "body"),
+    ("content", "body"),
+    ("text", "body"),
+)
+
+
+@dataclass
+class Segment:
+    key: str
+    text: str
+    format: str = "plain"
+    field: str = ""
+    kind: str = ""
+    max_length: int | None = None
+    translations: dict | None = None
+
+    def as_payload(self, with_translations=True):
+        data = {k: v for k, v in asdict(self).items() if v not in (None, "", {})}
+        if not with_translations:
+            data.pop("translations", None)
+        return data
+
+
+@dataclass
+class Unit:
+    external_key: str
+    adapter: str
+    source_language: str
+    segments: list = field(default_factory=list)
+    label: str = ""
+    path: str = ""
+    writable_languages: list | None = None
+    metadata: dict = field(default_factory=dict)
+
+    def as_payload(self, with_translations=True):
+        data = {
+            "external_key": self.external_key,
+            "adapter": self.adapter,
+            "label": self.label[:500],
+            "path": self.path[:2000],
+            "source_language": self.source_language,
+            "writable_languages": self.writable_languages,
+            "metadata": self.metadata,
+            "segments": [s.as_payload(with_translations) for s in self.segments],
+        }
+        return {k: v for k, v in data.items() if v is not None}
+
+
+class Adapter:
+    """Base for all adapters; see `ModelAdapter` for model-field libraries."""
+
+    name = ""
+
+    def watched_models(self):
+        """`{model: owner(instance) -> object or None}`: saves of these models mark the owning
+        object dirty; deleting an object of `owner_models()` deletes its unit."""
+        return {}
+
+    def owner_models(self):
+        return []
+
+    def iter_objects(self):
+        """Every object that should be synced (backfill)."""
+        return iter(())
+
+    def external_key(self, obj):
+        raise NotImplementedError
+
+    def get_object(self, external_key):
+        raise NotImplementedError
+
+    def snapshot(self, obj):
+        """The unit for `obj` (source language, all segments), or None if it has no source
+        content to translate."""
+        raise NotImplementedError
+
+    def writable_languages(self):
+        return list(get_config().languages)
+
+    def deliver(self, results):
+        """Take results (dicts from `/results`); return the ids that may be acknowledged."""
+        raise NotImplementedError
+
+
+def detect_format(model_field, value, label):
+    """`html` for rich-text fields and markup values, else `plain`; `FIELD_FORMATS` wins."""
+    override = get_config().field_formats.get(label.lower())
+    if override:
+        return override
+    if type(model_field).__name__ in HTML_FIELD_CLASSES:
+        return "html"
+    if isinstance(model_field, models.TextField) and _MARKUP.match(value or ""):
+        return "html"
+    return "plain"
+
+
+def kind_for(field_name):
+    name = field_name.lower()
+    for hint, kind in KIND_HINTS:
+        if hint in name:
+            return kind
+    return ""
+
+
+def is_translatable_field(model_field):
+    """Text fields only; slugs, URLs, emails and choices would break links or data."""
+    if not isinstance(model_field, (models.CharField, models.TextField)):
+        return False
+    if isinstance(model_field, (models.SlugField, models.URLField, models.EmailField)):
+        return False
+    return not model_field.choices
+
+
+class ModelAdapter(Adapter):
+    """Translations stored on model fields. Subclasses implement the library specifics."""
+
+    def models(self):
+        """Models the library translates (before exclusions)."""
+        raise NotImplementedError
+
+    def translated_field_names(self, model):
+        raise NotImplementedError
+
+    def source_value(self, obj, field_name):
+        raise NotImplementedError
+
+    def target_value(self, obj, field_name, language):
+        raise NotImplementedError
+
+    def target_languages_with_content(self, obj):
+        raise NotImplementedError
+
+    def write(self, obj, language, values):
+        """Store `{field_name: text}` as `language` and save."""
+        raise NotImplementedError
+
+    # --- Common behaviour ----------------------------------------------------------------
+
+    def synced_models(self):
+        excluded = get_config().exclude_models
+        return [
+            model
+            for model in self.models()
+            if model._meta.label_lower not in excluded and self.fields(model)
+        ]
+
+    def owner_models(self):
+        return self.synced_models()
+
+    def fields(self, model):
+        """`{field_name: model field}` of the translatable text fields that are synced, in
+        declaration order (libraries may keep them in sets; the order must be stable)."""
+        excluded = get_config().exclude_fields
+        result = {}
+        for name in sorted(self.translated_field_names(model), key=self._order_key(model)):
+            model_field = self._model_field(model, name)
+            if model_field is None or not is_translatable_field(model_field):
+                continue
+            if f"{model._meta.label_lower}.{name}" in excluded:
+                continue
+            result[name] = model_field
+        return result
+
+    def _order_key(self, model):
+        def key(name):
+            model_field = self._model_field(model, name)
+            return (getattr(model_field, "creation_counter", 0), name)
+
+        return key
+
+    def _model_field(self, model, name):
+        try:
+            return model._meta.get_field(name)
+        except Exception:  # noqa: BLE001 (library-specific proxies)
+            return None
+
+    def iter_objects(self):
+        for model in self.synced_models():
+            yield from model._default_manager.order_by("pk").iterator()
+
+    def external_key(self, obj):
+        return f"{self.name}:{obj._meta.label_lower}:{obj.pk}"
+
+    def get_object(self, external_key):
+        try:
+            prefix, label, pk = external_key.split(":", 2)
+            model = apps.get_model(label)
+        except (ValueError, LookupError):
+            return None
+        if prefix != self.name or model not in self.synced_models():
+            return None
+        return model._default_manager.filter(pk=pk).first()
+
+    def field_label(self, obj, field_name):
+        return f"{obj._meta.label_lower}.{field_name}"
+
+    def field_format(self, obj, field_name, value=None):
+        model_field = self.fields(type(obj))[field_name]
+        if value is None:
+            value = self.source_value(obj, field_name)
+        return detect_format(model_field, value, self.field_label(obj, field_name))
+
+    def snapshot(self, obj):
+        source = get_config().source_language
+        segments = []
+        other_languages = [
+            language
+            for language in self.target_languages_with_content(obj)
+            if language != source and language in self.writable_languages()
+        ]
+        for name, model_field in self.fields(type(obj)).items():
+            text = self.source_value(obj, name)
+            if not text or not str(text).strip():
+                continue
+            text = str(text)
+            translations = {}
+            for language in other_languages:
+                value = self.target_value(obj, name, language)
+                if value and str(value).strip():
+                    translations[language] = str(value)
+            segments.append(
+                Segment(
+                    key=name,
+                    text=text,
+                    format=detect_format(model_field, text, self.field_label(obj, name)),
+                    field=name,
+                    kind=kind_for(name),
+                    max_length=getattr(model_field, "max_length", None),
+                    translations=translations or None,
+                )
+            )
+        if not segments:
+            return None
+        return Unit(
+            external_key=self.external_key(obj),
+            adapter=self.name,
+            source_language=source,
+            segments=segments,
+            label=self.label(obj),
+            path=self.path(obj),
+            writable_languages=self.unit_writable_languages(),
+            metadata={"model": obj._meta.label_lower},
+        )
+
+    def unit_writable_languages(self):
+        """Languages this unit can store, if the adapter restricts them (None: all)."""
+        return None
+
+    def label(self, obj):
+        with translation.override(get_config().source_language):
+            return str(obj)
+
+    def path(self, obj):
+        get_absolute_url = getattr(obj, "get_absolute_url", None)
+        if get_absolute_url is None:
+            return ""
+        try:
+            with translation.override(get_config().source_language):
+                return get_absolute_url() or ""
+        except Exception:  # noqa: BLE001 (a broken get_absolute_url must not stop the sync)
+            return ""
+
+    def deliver(self, results):
+        from .suggestions import store_results
+
+        return store_results(self, results)
+
+
+class Registry:
+    def __init__(self):
+        self._adapters = {}
+
+    def register(self, adapter):
+        if not KEY_PATTERN.match(f"{adapter.name}:x"):
+            raise ValueError(f"Invalid adapter name {adapter.name!r}")
+        self._adapters[adapter.name] = adapter
+        return adapter
+
+    def unregister(self, name):
+        self._adapters.pop(name, None)
+
+    def get(self, name):
+        return self._adapters.get(name)
+
+    def for_key(self, external_key):
+        return self._adapters.get(external_key.split(":", 1)[0])
+
+    def all(self):
+        return list(self._adapters.values())
+
+
+registry = Registry()
