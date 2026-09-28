@@ -1,4 +1,10 @@
-"""An in-memory stand-in for the Ponyglot Cloud API v1, plugged in as the client transport."""
+"""Test helpers for connector packages: an in-memory stand-in for the Ponyglot Cloud API v1.
+
+cloud = FakeCloud()
+client = Client(transport=cloud)   # ponyglot.client.Client
+sync.run(client)
+cloud.add_result(unit_key, segment_key, "de", "Preise", source="Pricing")
+"""
 
 import json
 import urllib.parse
@@ -22,6 +28,8 @@ class FakeCloud:
         self.fail_next = []  # statuses to answer the next requests with (e.g. 503)
         self.confirm_above = None  # characters above which jobs need confirmation
         self.qa_mode = "editors"
+        self.languages = ["de", "fr"]  # target languages of the site
+        self.states = {}  # (unit, segment key, language) → state for unit status
         self.attention = []  # items for GET /attention
         self.has_attention = True  # False: an older cloud without the endpoint
         self._ids = count(5000)
@@ -33,7 +41,8 @@ class FakeCloud:
         query = dict(urllib.parse.parse_qsl(parsed.query))
         payload = json.loads(body) if body else None
         self.requests.append((method, path, payload))
-        assert headers["Authorization"] == "Bearer pg_test"
+        if not headers.get("Authorization", "").startswith("Bearer "):
+            return 401, b'{"detail": "missing key"}'
         if self.fail_next:
             return self.fail_next.pop(0), b'{"detail": "unavailable"}'
         status, data = self.route(method, path, query, payload)
@@ -70,6 +79,34 @@ class FakeCloud:
                 self.units[key] = unit
                 items.append({"external_key": key, "ok": True, "result": {}})
             return 200, {"results": items}
+        if method == "GET" and path.startswith("/units/") and path.endswith("/status"):
+            key = urllib.parse.unquote(path.removeprefix("/units/").removesuffix("/status"))
+            unit = self.units.get(key)
+            if unit is None:
+                return 404, {"detail": "Not Found"}
+            codes = [
+                c for c in self.languages if c in (unit.get("writable_languages") or self.languages)
+            ]
+            held = {(i["key"], i["language"]) for i in self.attention if i["unit"] == key}
+            segments = [
+                {
+                    "key": s["key"],
+                    "states": {c: self.states.get((key, s["key"], c), "missing") for c in codes},
+                    "held_back": [c for c in codes if (s["key"], c) in held],
+                    "qa": {},
+                }
+                for s in unit["segments"]
+            ]
+            needing = sum(any(v != "ok" for v in s["states"].values()) for s in segments)
+            return 200, {
+                "external_key": key,
+                "label": unit.get("label", ""),
+                "path": unit.get("path", ""),
+                "segments_total": len(segments),
+                "segments_needing_work": needing,
+                "languages": [{"code": c} for c in codes],
+                "segments": segments,
+            }
         if method == "DELETE" and path.startswith("/units/"):
             key = urllib.parse.unquote(path.removeprefix("/units/"))
             self.units.pop(key, None)

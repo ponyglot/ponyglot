@@ -113,8 +113,9 @@ def apply(suggestions, user=None, texts=None, *, confirm_errors=False):
             if values:
                 values.update(adapter.slug_values(obj, language, values))
                 adapter.write(obj, language, values)
+            status = adapter.status_after_write(obj) if done else None
             for suggestion in done:
-                suggestion.status = SuggestionStatus.APPLIED
+                suggestion.status = status
                 suggestion.decided_at = now
                 suggestion.decided_by = user if getattr(user, "pk", None) else None
                 suggestion.save(update_fields=["status", "final_text", "decided_at", "decided_by"])

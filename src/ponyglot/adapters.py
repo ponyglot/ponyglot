@@ -54,6 +54,9 @@ class Segment:
     kind: str = ""
     max_length: int | None = None
     translations: dict | None = None
+    # Structure (plugin trees, nested blocks): the parent segment/container and the order.
+    parent_key: str = ""
+    position: int | None = None
 
     def as_payload(self, with_translations=True):
         data = {k: v for k, v in asdict(self).items() if v not in (None, "", {})}
@@ -94,6 +97,9 @@ class Adapter:
     # What the adapter can handle (cloud ADR 0014): "qa_errors" (shows QA errors to editors),
     # "whole_unit" (needs a unit's translations in one piece per language).
     capabilities = frozenset()
+    # Status of a suggestion once written: model adapters apply for good ("applied", reported
+    # as approved); draft-based adapters write a draft ("drafted": approved on publishing).
+    applied_status = "applied"
 
     def watched_models(self):
         """`{model: owner(instance) -> object or None}`: saves of these models mark the owning
@@ -124,6 +130,14 @@ class Adapter:
     def deliver(self, results):
         """Take results (dicts from `/results`); return the ids that may be acknowledged."""
         raise NotImplementedError
+
+    def status_after_write(self, obj):
+        """The suggestion status once written to `obj` (see `applied_status`)."""
+        return self.applied_status
+
+    def slug_values(self, obj, language, values):
+        """Further values to write along with `values` (e.g. derived slugs)."""
+        return {}
 
 
 def detect_format(model_field, value, label):

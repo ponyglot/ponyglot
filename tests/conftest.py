@@ -1,8 +1,7 @@
 import pytest
 
 from ponyglot.client import Client
-
-from .fakecloud import FakeCloud
+from ponyglot.testing import FakeCloud
 
 
 @pytest.fixture

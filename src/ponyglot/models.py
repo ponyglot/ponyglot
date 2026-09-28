@@ -31,6 +31,8 @@ class SyncState(models.Model):
 
 class SuggestionStatus(models.TextChoices):
     PENDING = "pending", _("Pending")
+    # Written into a draft (django CMS, Wagtail); applied/rejected when it's published/discarded.
+    DRAFTED = "drafted", _("In a draft")
     APPLIED = "applied", _("Applied")
     REJECTED = "rejected", _("Rejected")
     SUPERSEDED = "superseded", _("Superseded")

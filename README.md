@@ -123,6 +123,12 @@ link other languages with `{% get_translated_url %}`. When a slug follows a chan
 object's old URL in that language stops working unless you add a redirect. To keep a model's
 slugs out of this, list them in `EXCLUDE_FIELDS`.
 
+## For connector authors
+
+Adapters subclass `ponyglot.adapters.Adapter` (see `ModelAdapter` and djangocms-ponyglot), set
+`capabilities` and, for draft-based systems, `applied_status = "drafted"`. `ponyglot.testing`
+has `FakeCloud`, an in-memory API for tests: `Client(transport=FakeCloud())`.
+
 ## Development
 
 ```sh
