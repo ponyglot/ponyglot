@@ -91,6 +91,9 @@ class Adapter:
     """Base for all adapters; see `ModelAdapter` for model-field libraries."""
 
     name = ""
+    # What the adapter can handle (cloud ADR 0014): "qa_errors" (shows QA errors to editors),
+    # "whole_unit" (needs a unit's translations in one piece per language).
+    capabilities = frozenset()
 
     def watched_models(self):
         """`{model: owner(instance) -> object or None}`: saves of these models mark the owning
@@ -154,6 +157,8 @@ def is_translatable_field(model_field):
 
 class ModelAdapter(Adapter):
     """Translations stored on model fields. Subclasses implement the library specifics."""
+
+    capabilities = frozenset({"qa_errors"})  # the suggestion admin shows QA errors
 
     def models(self):
         """Models the library translates (before exclusions)."""

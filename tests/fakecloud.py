@@ -21,6 +21,9 @@ class FakeCloud:
         self.reject_keys = set()  # batch items answered with ok=false
         self.fail_next = []  # statuses to answer the next requests with (e.g. 503)
         self.confirm_above = None  # characters above which jobs need confirmation
+        self.qa_mode = "editors"
+        self.attention = []  # items for GET /attention
+        self.has_attention = True  # False: an older cloud without the endpoint
         self._ids = count(5000)
 
     # The transport signature of ponyglot.client.Client
@@ -39,7 +42,15 @@ class FakeCloud:
     def route(self, method, path, query, payload):
         if (method, path) == ("POST", "/handshake"):
             self.handshakes.append(payload)
-            return 200, {"name": "Test site", "warnings": [], "review_mode": "always"}
+            return 200, {
+                "name": "Test site",
+                "warnings": [],
+                "review_mode": "always",
+                "qa_mode": self.qa_mode,
+                "capabilities": payload.get("capabilities", []),
+            }
+        if (method, path) == ("GET", "/attention") and self.has_attention:
+            return 200, {"qa_mode": self.qa_mode, "items": self.attention, "truncated": False}
         if (method, path) == ("GET", "/site"):
             return 200, {
                 "name": "Test site",

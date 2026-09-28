@@ -146,11 +146,9 @@ def test_apply_writes_and_reports_approval_with_edits(api, cloud, article, admin
     sync.run(api)
     title = Suggestion.objects.get(field="title")
 
-    applied, outdated = suggestions.apply(
-        Suggestion.objects.all(), admin_user, texts={title.pk: "Preisliste"}
-    )
+    result = suggestions.apply(Suggestion.objects.all(), admin_user, texts={title.pk: "Preisliste"})
 
-    assert (applied, outdated) == (2, 0)
+    assert result == (2, 0, 0)
     german = Article.objects.language("de").get(pk=article.pk)
     assert (german.title, german.body) == ("Preisliste", "<p>79 €</p>")
     sync.run(api)
@@ -174,9 +172,9 @@ def test_a_changed_source_is_not_applied(api, cloud, article, admin_user):
     article.title = "Prices and plans"
     article.save()
 
-    applied, outdated = suggestions.apply(Suggestion.objects.all(), admin_user)
+    result = suggestions.apply(Suggestion.objects.all(), admin_user)
 
-    assert (applied, outdated) == (0, 1)
+    assert result == (0, 1, 0)
     assert Suggestion.objects.get().status == SuggestionStatus.OUTDATED
     assert not Article.objects.filter(translations__language_code="de").exists()
 

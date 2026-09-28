@@ -1,0 +1,11 @@
+Hello,
+
+New machine translations arrived and wait for an editor:
+{% for language, n in languages %}
+- {{ language }}: {{ n }}{% endfor %}
+{% if errors %}
+{{ errors }} of them have a QA error to fix before applying.
+{% endif %}
+Nothing is published until you apply it.{% if url %} Review them here:
+
+{{ url }}{% endif %}

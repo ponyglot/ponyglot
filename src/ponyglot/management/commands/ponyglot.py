@@ -62,8 +62,12 @@ class Command(BaseCommand):
         self.stdout.write(f"Adapters: {', '.join(a.name for a in registry.all())}")
         self.stdout.write(f"Source language: {config.source_language}")
         self.stdout.write(f"Languages: {', '.join(config.languages)}")
-        for warning in sync.handshake(client):
+        report = sync.Report()
+        for warning in sync.handshake(client, report):
             self.stdout.write(self.style.WARNING(f"! {warning}"))
+        if report.qa_mode:
+            who = "editors fix them" if report.qa_mode == "editors" else "a separate QA review"
+            self.stdout.write(f"QA errors: {who} ({report.qa_mode})")
         site = client.request("GET", "/site")
         writable = [
             lang["code"] for lang in site.get("target_languages", []) if lang.get("writable")
@@ -114,6 +118,8 @@ class Command(BaseCommand):
             f"reviews reported {report.reviews_reported}, translations received "
             f"{report.delivered}"
         )
+        if report.held_back:
+            self.stdout.write(f"{report.held_back} translation(s) waiting for a QA review")
         for key, message in report.push_errors:
             self.stderr.write(f"! {key}: {message}")
         for prefix, count in report.undeliverable.items():

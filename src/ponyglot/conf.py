@@ -14,6 +14,9 @@ Optional keys:
 - `FIELD_FORMATS`: `{"app_label.ModelName.field": "html"}` overrides the detected format.
 - `SLUG_SOURCES`: `{"app_label.ModelName.slug": "title"}`, the field a translated slug follows
   (default: the model's first title-like field). Slugs in `EXCLUDE_FIELDS` aren't touched.
+- `NOTIFY_EDITORS`: email editors when translations are ready for review: `True` (everyone who
+  may change suggestions) or a list of addresses; default False. Uses the site's email setup.
+- `SITE_URL`: e.g. `https://example.com`, to put absolute admin links in emails.
 - `TIMEOUT`: seconds per API request (default 30).
 - `BATCH_SIZE`: units per push request (default 50, at most 100).
 """
@@ -35,6 +38,8 @@ class Config:
     exclude_fields: frozenset
     field_formats: dict
     slug_sources: dict
+    notify_editors: object
+    site_url: str
     timeout: float
     batch_size: int
 
@@ -56,6 +61,8 @@ def get_config():
         exclude_fields=frozenset(_label(f) for f in options.get("EXCLUDE_FIELDS", ())),
         field_formats={_label(k): v for k, v in options.get("FIELD_FORMATS", {}).items()},
         slug_sources={_label(k): v for k, v in options.get("SLUG_SOURCES", {}).items()},
+        notify_editors=options.get("NOTIFY_EDITORS", False),
+        site_url=(options.get("SITE_URL") or "").rstrip("/"),
         timeout=float(options.get("TIMEOUT", 30)),
         batch_size=max(1, min(100, int(options.get("BATCH_SIZE", 50)))),
     )

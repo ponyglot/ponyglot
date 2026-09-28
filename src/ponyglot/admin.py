@@ -11,8 +11,10 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import ngettext
 
+from . import exclusions
 from . import suggestions as service
-from .models import Suggestion, SuggestionStatus, SyncState
+from .adapters import registry
+from .models import Exclusion, HeldBack, Suggestion, SuggestionStatus, SyncState
 
 _TOKENS = re.compile(r"\s+|[^\s]+")
 
@@ -51,6 +53,7 @@ class SuggestionAdmin(admin.ModelAdmin):
     form = SuggestionForm
     change_form_template = "admin/ponyglot/suggestion/change_form.html"
     list_display = ["external_key", "field", "language", "short_text", "qa_flag", "status"]
+    list_display_links = ["external_key", "field"]
     list_filter = ["status", "language", "adapter"]
     search_fields = ["external_key", "field", "text"]
     actions = ["apply_selected", "reject_selected"]
@@ -70,9 +73,11 @@ class SuggestionAdmin(admin.ModelAdmin):
     def short_text(self, obj):
         return (obj.applied_text[:80] + "…") if len(obj.applied_text) > 80 else obj.applied_text
 
-    @admin.display(description=_("QA"), boolean=True)
+    @admin.display(description=_("QA"))
     def qa_flag(self, obj):
-        return not obj.qa
+        if obj.has_errors:
+            return format_html('<strong class="errornote">{}</strong>', _("error"))
+        return _("warning") if obj.qa else "–"
 
     def _object(self, obj):
         adapter = service.adapter_for(obj)
@@ -110,12 +115,18 @@ class SuggestionAdmin(admin.ModelAdmin):
         current = adapter.target_value(target, obj.field, obj.language) if target else ""
         return word_diff(current or "", obj.applied_text)
 
-    @admin.display(description=_("QA warnings"))
+    @admin.display(description=_("QA"))
     def qa_issues(self, obj):
         if not obj.qa:
             return "–"
         return format_html_join(
-            "", "<div>{}: {}</div>", ((i.get("code"), i.get("message")) for i in obj.qa)
+            "",
+            '<div class="ponyglot-qa-{}"><strong>{}</strong> {}: {}</div>',
+            (
+                (i.get("severity"), _("Error") if i.get("severity") == "error" else _("Warning"))
+                + (i.get("code"), i.get("message"))
+                for i in obj.qa
+            ),
         )
 
     def has_change_permission(self, request, obj=None):
@@ -128,10 +139,34 @@ class SuggestionAdmin(admin.ModelAdmin):
             return HttpResponseRedirect("../../")
         if "_ponyglot_apply" in request.POST:
             text = obj.final_text or obj.text
-            applied, outdated = service.apply([obj], request.user, texts={obj.pk: text})
-            self._report(request, applied, outdated, 0)
+            result = service.apply(
+                [obj],
+                request.user,
+                texts={obj.pk: text},
+                confirm_errors="_ponyglot_confirm" in request.POST,
+            )
+            self._report(request, result.applied, result.outdated, 0, result.blocked)
+            if result.blocked:
+                return HttpResponseRedirect(".")
             return HttpResponseRedirect("../../")
         return super().response_change(request, obj)
+
+    def changelist_view(self, request, extra_context=None):
+        waiting = HeldBack.objects.count()
+        if waiting:
+            self.message_user(
+                request,
+                ngettext(
+                    "%d translation is waiting for a QA review in Ponyglot; it arrives once "
+                    "it's resolved.",
+                    "%d translations are waiting for a QA review in Ponyglot; they arrive once "
+                    "they're resolved.",
+                    waiting,
+                )
+                % waiting,
+                messages.INFO,
+            )
+        return super().changelist_view(request, extra_context)
 
     def save_model(self, request, obj, form, change):
         # Only the edited text is saved here; applying/rejecting happens in response_change.
@@ -141,14 +176,27 @@ class SuggestionAdmin(admin.ModelAdmin):
 
     @admin.action(description=_("Apply selected suggestions"), permissions=["change"])
     def apply_selected(self, request, queryset):
-        applied, outdated = service.apply(list(queryset), request.user)
-        self._report(request, applied, outdated, 0)
+        result = service.apply(list(queryset), request.user)
+        self._report(request, result.applied, result.outdated, 0, result.blocked)
 
     @admin.action(description=_("Reject selected suggestions"), permissions=["change"])
     def reject_selected(self, request, queryset):
         self._report(request, 0, 0, service.reject(list(queryset), request.user))
 
-    def _report(self, request, applied, outdated, rejected):
+    def _report(self, request, applied, outdated, rejected, blocked=0):
+        if blocked:
+            self.message_user(
+                request,
+                ngettext(
+                    "%d suggestion was not applied: it has a QA error. Fix the text, or open "
+                    "it and confirm applying it anyway.",
+                    "%d suggestions were not applied: they have QA errors. Fix the text, or "
+                    "open them and confirm applying them anyway.",
+                    blocked,
+                )
+                % blocked,
+                messages.ERROR,
+            )
         if applied:
             self.message_user(
                 request,
@@ -179,13 +227,121 @@ class SuggestionAdmin(admin.ModelAdmin):
 
 @admin.register(SyncState)
 class SyncStateAdmin(admin.ModelAdmin):
-    list_display = ["external_key", "adapter", "dirty", "deleted", "pushed_at", "error"]
+    """Everything that is synced; exclude content from translation here."""
+
+    list_display = ["external_key", "adapter", "excluded", "dirty", "pushed_at", "error"]
     list_filter = ["adapter", "dirty", "deleted"]
     search_fields = ["external_key"]
     readonly_fields = [f.name for f in SyncState._meta.fields]
+    actions = ["exclude_selected", "include_selected"]
 
     def has_add_permission(self, request):
         return False
 
     def has_change_permission(self, request, obj=None):
         return False
+
+    def has_exclude_permission(self, request):
+        return request.user.has_perm("ponyglot.add_exclusion")
+
+    @admin.display(description=_("excluded"))
+    def excluded(self, obj):
+        exclusion = exclusions.get(obj.external_key)
+        if exclusion is None:
+            return "–"
+        return ", ".join(exclusion.languages) or _("all languages")
+
+    def _objects(self, queryset):
+        for sync_state in queryset:
+            adapter = registry.get(sync_state.adapter)
+            obj = adapter.get_object(sync_state.external_key) if adapter else None
+            if obj is not None:
+                yield adapter, obj
+
+    @admin.action(description=_("Exclude from translation"), permissions=["exclude"])
+    def exclude_selected(self, request, queryset):
+        count = 0
+        for adapter, obj in self._objects(queryset):
+            exclusions.exclude(adapter, obj, user=request.user)
+            count += 1
+        self.message_user(
+            request,
+            ngettext(
+                "%d object excluded from translation; the next sync removes it from Ponyglot.",
+                "%d objects excluded from translation; the next sync removes them from Ponyglot.",
+                count,
+            )
+            % count,
+            messages.SUCCESS,
+        )
+
+    @admin.action(description=_("Translate again (remove exclusion)"), permissions=["exclude"])
+    def include_selected(self, request, queryset):
+        count = 0
+        for adapter, obj in self._objects(queryset):
+            exclusions.include(adapter, obj)
+            count += 1
+        self.message_user(
+            request,
+            ngettext("%d object is translated again.", "%d objects are translated again.", count)
+            % count,
+            messages.SUCCESS,
+        )
+
+
+@admin.register(Exclusion)
+class ExclusionAdmin(admin.ModelAdmin):
+    list_display = ["external_key", "adapter", "languages", "note", "created_by", "created_at"]
+    list_filter = ["adapter"]
+    search_fields = ["external_key", "note"]
+    readonly_fields = ["adapter", "external_key", "created_by", "created_at"]
+
+    def has_add_permission(self, request):
+        return False  # use "Exclude from translation" on the synced content
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        _mark_changed(obj)
+
+    def delete_model(self, request, obj):
+        super().delete_model(request, obj)
+        _mark_changed(obj)
+
+    def delete_queryset(self, request, queryset):
+        changed = list(queryset)
+        super().delete_queryset(request, queryset)
+        for obj in changed:
+            _mark_changed(obj)
+
+
+def _mark_changed(exclusion):
+    """Push the object again with its new exclusion (or none)."""
+    from .state import _mark
+
+    _mark(exclusion.adapter, exclusion.external_key, deleted=False)
+
+
+@admin.register(HeldBack)
+class HeldBackAdmin(admin.ModelAdmin):
+    """What the cloud holds back for QA review, and why (refreshed by every sync)."""
+
+    list_display = ["label_or_key", "key", "language", "reason", "since"]
+    list_filter = ["language"]
+    search_fields = ["external_key", "label", "key"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description=_("content"))
+    def label_or_key(self, obj):
+        return obj.label or obj.external_key
+
+    @admin.display(description=_("why"))
+    def reason(self, obj):
+        return "; ".join(issue.get("message", "") for issue in obj.issues) or "–"

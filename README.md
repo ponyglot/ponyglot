@@ -63,6 +63,34 @@ bulk actions). A suggestion whose source changed in the meantime can't be applie
 translated again. The next sync reports your decisions, and approved texts (including your
 corrections) feed the translation memory.
 
+## Keep content out of translation
+
+In the admin, **Ponyglot › Sync states** lists everything that is synced. The action **Exclude
+from translation** removes objects from Ponyglot (the next sync deletes them there); **Translate
+again** undoes it. To exclude only some languages, edit the exclusion under **Exclusions from
+translation**. Connectors such as `djangocms-ponyglot` offer the same from their toolbar
+(`ponyglot.exclusions.exclude` / `include`). Whole models and fields: `EXCLUDE_MODELS`,
+`EXCLUDE_FIELDS`.
+
+## QA errors
+
+Every translation goes through Ponyglot's quality checks (links, placeholders, HTML, length,
+glossary). Your plan and site settings decide who fixes errors:
+
+- **Editors fix them** (default on most plans): the suggestion arrives with the error shown. Fix
+  the text and apply, or tick *Apply despite QA errors*. Bulk apply skips suggestions with
+  errors. The cloud checks applied text again.
+- **Separate QA review**: translations with errors wait in the Ponyglot dashboard until a
+  reviewer resolves them. **Ponyglot › Translations waiting for QA review** lists them with the
+  reason (refreshed by every sync), and the suggestion list says how many are waiting.
+
+## Emails to editors
+
+With `NOTIFY_EDITORS`, every sync that brings new suggestions sends one email ("3 translations
+ready for review", per language, with QA errors counted) through your site's email setup:
+`True` for everyone who may change suggestions, or a list of addresses. Set `SITE_URL` for an
+absolute link to the admin.
+
 ## Settings
 
 | Key | Default | |
@@ -75,6 +103,8 @@ corrections) feed the translation memory.
 | `EXCLUDE_FIELDS` | `[]` | e.g. `["blog.Post.subtitle"]` |
 | `FIELD_FORMATS` | detected | e.g. `{"blog.Post.lead": "html"}` |
 | `SLUG_SOURCES` | first title field | the field a translated slug follows, e.g. `{"blog.Post.slug": "headline"}` |
+| `NOTIFY_EDITORS` | `False` | `True` or a list of addresses, see *Emails to editors* |
+| `SITE_URL` | – | e.g. `https://example.com`, for links in emails |
 | `TIMEOUT` | `30` | seconds per request |
 | `BATCH_SIZE` | `50` | units per push (≤ 100) |
 

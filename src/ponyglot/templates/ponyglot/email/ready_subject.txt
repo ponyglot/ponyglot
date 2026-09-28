@@ -1,0 +1,1 @@
+{{ count }} translation{{ count|pluralize }} ready for review

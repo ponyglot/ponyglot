@@ -8,11 +8,11 @@ from dataclasses import dataclass, field
 from django.db import transaction
 from django.utils import timezone
 
-from . import state
+from . import exclusions, notifications, state
 from .adapters import registry
 from .client import APIError, Client
 from .conf import get_config
-from .models import Suggestion, SuggestionStatus, SyncState
+from .models import HeldBack, Suggestion, SuggestionStatus, SyncState
 from .suggestions import review_payload, unreported
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,9 @@ class Report:
     reviews_reported: int = 0
     delivered: int = 0
     undeliverable: dict = field(default_factory=dict)  # adapter prefix → count
+    held_back: int = 0
+    notified: bool = False
+    qa_mode: str = ""
     warnings: list = field(default_factory=list)
 
 
@@ -34,13 +37,28 @@ def snapshot_hash(payload):
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
-def handshake(client):
+def capabilities():
+    """What this installation can handle (cloud ADR 0014): `qa_errors` only if every adapter
+    shows QA errors to editors; `whole_unit` if any adapter needs units in one piece."""
+    adapters = registry.all()
+    result = []
+    if adapters and all("qa_errors" in adapter.capabilities for adapter in adapters):
+        result.append("qa_errors")
+    if any("whole_unit" in adapter.capabilities for adapter in adapters):
+        result.append("whole_unit")
+    return result
+
+
+def handshake(client, report=None):
     config = get_config()
     response = client.handshake(
         adapters=[adapter.name for adapter in registry.all()],
         source_language=config.source_language,
         languages=config.languages,
+        capabilities=capabilities(),
     )
+    if report is not None:
+        report.qa_mode = response.get("qa_mode", "")
     return response.get("warnings", [])
 
 
@@ -64,6 +82,8 @@ def estimate(adapter_names=None):
             continue
         for obj in adapter.iter_objects():
             unit = adapter.snapshot(obj)
+            if unit is not None:
+                unit = exclusions.apply(unit)
             if unit is None:
                 continue
             units += 1
@@ -85,7 +105,9 @@ def push(client, report):
             _delete_remote(client, sync_state, report)
             continue
         unit = adapter.snapshot(obj)
-        if unit is None:  # no source content (any more)
+        if unit is not None:
+            unit = exclusions.apply(unit)
+        if unit is None:  # no source content (any more), or excluded from translation
             if sync_state.pushed_at:
                 _delete_remote(client, sync_state, report, keep_state=True)
             else:
@@ -166,6 +188,7 @@ def report_reviews(client, report):
 
 
 def pull(client, report):
+    started = timezone.now()
     by_adapter = {}
     for result in client.results():
         by_adapter.setdefault(result["unit"].split(":", 1)[0], []).append(result)
@@ -179,16 +202,43 @@ def pull(client, report):
         if handled:
             client.acknowledge(handled)
             report.delivered += len(handled)
+    new = list(Suggestion.objects.filter(status=SuggestionStatus.PENDING, created_at__gte=started))
+    report.notified = notifications.notify(new)
+
+
+def refresh_held_back(client, report):
+    """Mirror the translations the cloud holds back for QA review (for editors' UIs)."""
+    try:
+        data = client.attention()
+    except APIError as error:
+        if error.status == 404:  # a cloud without QA modes
+            return
+        raise
+    with transaction.atomic():
+        HeldBack.objects.all().delete()
+        HeldBack.objects.bulk_create(
+            HeldBack(
+                external_key=item["unit"],
+                label=item.get("label", "")[:500],
+                key=item["key"],
+                language=item["language"],
+                issues=item.get("issues", []),
+                since=item.get("since"),
+            )
+            for item in data.get("items", [])
+        )
+    report.held_back = len(data.get("items", []))
 
 
 def run(client=None, *, do_push=True, do_pull=True):
     """One sync round; returns a `Report`. Raises `APIError` if the cloud is unreachable."""
     client = client or Client()
     report = Report()
-    report.warnings = handshake(client)
+    report.warnings = handshake(client, report)
     if do_push:
         push(client, report)
     report_reviews(client, report)
     if do_pull:
         pull(client, report)
+        refresh_held_back(client, report)
     return report

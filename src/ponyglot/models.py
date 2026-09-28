@@ -79,3 +79,61 @@ class Suggestion(models.Model):
     @property
     def applied_text(self):
         return self.final_text or self.text
+
+    @property
+    def has_errors(self):
+        return any(issue.get("severity") == "error" for issue in self.qa or [])
+
+    @property
+    def edited(self):
+        return bool(self.final_text) and self.final_text != self.text
+
+
+class Exclusion(models.Model):
+    """Content kept out of translation, for all languages or some (ADR 0002).
+
+    Everything excluded: the unit is removed from the cloud and no longer pushed. Some languages:
+    they're left out of the unit's writable languages, so no job translates into them.
+    """
+
+    adapter = models.CharField(max_length=50)
+    external_key = models.CharField(max_length=255, unique=True)
+    languages = models.JSONField(
+        default=list, blank=True, help_text=_("Language codes; empty means all languages.")
+    )
+    note = models.CharField(max_length=255, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("exclusion from translation")
+        verbose_name_plural = _("exclusions from translation")
+
+    def __str__(self):
+        return f"{self.external_key} ({', '.join(self.languages) or _('all languages')})"
+
+    @property
+    def all_languages(self):
+        return not self.languages
+
+
+class HeldBack(models.Model):
+    """A translation the cloud holds back for QA review (a copy of `GET /attention`, replaced
+    by every sync), so editors can see what is missing and why."""
+
+    external_key = models.CharField(max_length=255, db_index=True)
+    label = models.CharField(max_length=500, blank=True)
+    key = models.CharField(max_length=500)
+    language = models.CharField(max_length=15)
+    issues = models.JSONField(default=list, blank=True)
+    since = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["external_key", "key", "language"]
+        verbose_name = _("translation waiting for QA review")
+        verbose_name_plural = _("translations waiting for QA review")
+
+    def __str__(self):
+        return f"{self.label or self.external_key} · {self.key} [{self.language}]"

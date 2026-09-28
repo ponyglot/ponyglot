@@ -4,11 +4,15 @@
 <style>
   .field-diff del { background: #fdd; color: #900; text-decoration: line-through; }
   .field-diff ins { background: #dfd; color: #060; text-decoration: none; }
+  .ponyglot-qa-error { color: var(--error-fg, #ba2121); }
 </style>
 {% endblock %}
 {% block submit_buttons_bottom %}
   {% if has_change_permission %}
     <div class="submit-row">
+      {% if original.has_errors %}
+        <label><input type="checkbox" name="_ponyglot_confirm"> {% translate "Apply despite QA errors" %}</label>
+      {% endif %}
       <input type="submit" value="{% translate 'Apply' %}" class="default" name="_ponyglot_apply">
       <input type="submit" value="{% translate 'Reject' %}" name="_ponyglot_reject">
       <input type="submit" value="{% translate 'Save text' %}" name="_continue">

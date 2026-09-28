@@ -96,7 +96,7 @@ class Client:
 
     # --- Endpoints (docs/api.md in ponyglot-cloud) -------------------------------------------
 
-    def handshake(self, *, adapters, source_language, languages):
+    def handshake(self, *, adapters, source_language, languages, capabilities=()):
         return self.request(
             "POST",
             "/handshake",
@@ -105,6 +105,7 @@ class Client:
                 "adapters": list(adapters),
                 "source_language": source_language,
                 "languages": list(languages),
+                "capabilities": list(capabilities),
             },
         )
 
@@ -136,6 +137,10 @@ class Client:
             cursor = page.get("next_cursor")
             if not cursor:
                 return
+
+    def attention(self):
+        """Translations held back for QA review (`{"qa_mode", "items", "truncated"}`)."""
+        return self.request("GET", "/attention")
 
     def acknowledge(self, ids):
         return self.request("POST", "/results/ack", {"ids": list(ids)})

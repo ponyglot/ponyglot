@@ -1,6 +1,7 @@
 """Suggestions: machine translations that editors apply or reject (model adapters)."""
 
 from collections import defaultdict
+from typing import NamedTuple
 
 from django.db import transaction
 from django.utils import timezone
@@ -16,10 +17,13 @@ def store_results(adapter, results):
     Results for objects that no longer exist, or fields that aren't synced any more, are
     acknowledged without a suggestion (the next push tells the cloud).
     """
+    from .exclusions import is_excluded
+
     handled = []
     for result in results:
         obj = adapter.get_object(result["unit"])
-        if obj is None or result["key"] not in adapter.fields(type(obj)):
+        gone = obj is None or result["key"] not in adapter.fields(type(obj))
+        if gone or is_excluded(result["unit"], result["language"]):
             handled.append(result["id"])
             continue
         with transaction.atomic():
@@ -63,11 +67,19 @@ def is_current(suggestion, adapter, obj):
     return current == suggestion.source_fingerprint
 
 
-def apply(suggestions, user=None, texts=None):
+class Applied(NamedTuple):
+    applied: int
+    outdated: int
+    blocked: int  # QA errors, text unchanged, not confirmed
+
+
+def apply(suggestions, user=None, texts=None, *, confirm_errors=False):
     """Write pending suggestions to their objects. `texts`: `{suggestion pk: edited text}`.
 
-    Returns `(applied, outdated)` counts. Suggestions whose source changed since translation
-    are marked outdated instead (the cloud retranslates them after the next push).
+    Suggestions whose source changed since translation are marked outdated instead (the cloud
+    retranslates them after the next push). Suggestions with QA errors are only applied if
+    their text was edited (the cloud checks approved text again) or `confirm_errors` is set;
+    otherwise they stay pending and count as `blocked`.
     """
     texts = texts or {}
     groups = defaultdict(list)
@@ -76,7 +88,7 @@ def apply(suggestions, user=None, texts=None):
             groups[(suggestion.adapter, suggestion.external_key, suggestion.language)].append(
                 suggestion
             )
-    applied = outdated = 0
+    applied = outdated = blocked = 0
     now = timezone.now()
     for (_, external_key, language), group in groups.items():
         adapter = adapter_for(group[0])
@@ -93,6 +105,9 @@ def apply(suggestions, user=None, texts=None):
                 edited = texts.get(suggestion.pk)
                 if edited is not None and edited != suggestion.text:
                     suggestion.final_text = edited
+                if suggestion.has_errors and not suggestion.edited and not confirm_errors:
+                    blocked += 1
+                    continue
                 values[suggestion.field] = suggestion.applied_text
                 done.append(suggestion)
             if values:
@@ -104,7 +119,7 @@ def apply(suggestions, user=None, texts=None):
                 suggestion.decided_by = user if getattr(user, "pk", None) else None
                 suggestion.save(update_fields=["status", "final_text", "decided_at", "decided_by"])
                 applied += 1
-    return applied, outdated
+    return Applied(applied, outdated, blocked)
 
 
 def reject(suggestions, user=None):
