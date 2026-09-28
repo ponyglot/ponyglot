@@ -11,15 +11,19 @@ license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [{ name = "Fabian Braun", email = "hello@ponyglot.app" }]
 requires-python = ">=3.10"
-dependencies = ["Django>=4.2"]
+dependencies = ["Django>=5.2"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Framework :: Django",
-  "Framework :: Django :: 4.2",
   "Framework :: Django :: 5.2",
   "Framework :: Django :: 6.0",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Localization",
 ]
 

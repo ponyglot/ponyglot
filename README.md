@@ -5,6 +5,7 @@ the sync, the review admin and the **django-parler** and **django-modeltranslati
 The django CMS and Wagtail connectors (`djangocms-ponyglot`, `wagtail-ponyglot`) build on it.
 
 **Early access, pre-alpha.** APIs may change. See https://ponyglot.app.
+Requires Django 5.2 or newer and Python 3.10 or newer.
 
 Ponyglot keeps your content's translations consistent (one glossary and translation memory),
 current (only what changed is retranslated) and reviewed: **nothing is published
@@ -97,6 +98,7 @@ slugs out of this, list them in `EXCLUDE_FIELDS`.
 ```sh
 make install   # uv sync
 make check     # ruff, migrations check, tests (SQLite, no services needed)
+make matrix    # tests on Django 5.2 and 6.0 across Python 3.10–3.14
 ```
 
 Design decisions: [docs/decisions](docs/decisions/). License: BSD-3-Clause.

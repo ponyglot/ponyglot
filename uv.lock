@@ -155,7 +155,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "django", specifier = ">=4.2" },
+    { name = "django", specifier = ">=5.2" },
     { name = "django-modeltranslation", marker = "extra == 'modeltranslation'", specifier = ">=0.18" },
     { name = "django-parler", marker = "extra == 'parler'", specifier = ">=2.3" },
 ]
