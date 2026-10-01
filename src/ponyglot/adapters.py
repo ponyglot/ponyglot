@@ -198,6 +198,11 @@ class ModelAdapter(Adapter):
         """Whether another object already uses `slug` in `language`."""
         raise NotImplementedError
 
+    def form_field_name(self, form, field_name, language):
+        """The admin form field that edits `field_name` in `language`, or None if `form` doesn't
+        (suggestions are shown next to it on the change page)."""
+        return None
+
     # --- Common behaviour ----------------------------------------------------------------
 
     def synced_models(self):

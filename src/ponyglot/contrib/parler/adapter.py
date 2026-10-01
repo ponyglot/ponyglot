@@ -66,6 +66,10 @@ class ParlerAdapter(ModelAdapter):
             .exists()
         )
 
+    def form_field_name(self, form, field_name, language):
+        # The admin edits one language at a time (its tabs): the form's.
+        return field_name if getattr(form, "language_code", None) == language else None
+
     def write(self, obj, language, values):
         obj.set_current_language(language)
         for field_name, text in values.items():

@@ -123,6 +123,42 @@ def apply(suggestions, user=None, texts=None, *, confirm_errors=False):
     return Applied(applied, outdated, blocked)
 
 
+def record_written(suggestions, user=None):
+    """Mark pending suggestions an editor put into the change form and saved (the form wrote
+    them). What was saved counts as the applied text; a field left empty keeps it pending.
+    Suggestions whose source changed in the meantime become outdated (translated again)."""
+    applied = outdated = 0
+    now = timezone.now()
+    objects = {}
+    for suggestion in suggestions:
+        if suggestion.status != SuggestionStatus.PENDING:
+            continue
+        adapter = adapter_for(suggestion)
+        if suggestion.external_key not in objects:
+            objects[suggestion.external_key] = (
+                adapter.get_object(suggestion.external_key) if adapter else None
+            )
+        obj = objects[suggestion.external_key]
+        if obj is None or not is_current(suggestion, adapter, obj):
+            suggestion.status = SuggestionStatus.OUTDATED
+            suggestion.decided_at = now
+            suggestion.save(update_fields=["status", "decided_at"])
+            outdated += 1
+            continue
+        saved = str(adapter.target_value(obj, suggestion.field, suggestion.language) or "")
+        if not saved.strip():
+            continue
+        # Browsers send textareas with CRLF and form fields strip: neither is an edit.
+        unchanged = saved.replace("\r\n", "\n").strip() == suggestion.text.strip()
+        suggestion.final_text = "" if unchanged else saved
+        suggestion.status = adapter.status_after_write(obj)
+        suggestion.decided_at = now
+        suggestion.decided_by = user if getattr(user, "pk", None) else None
+        suggestion.save(update_fields=["status", "final_text", "decided_at", "decided_by"])
+        applied += 1
+    return Applied(applied, outdated, 0)
+
+
 def reject(suggestions, user=None):
     count = 0
     for suggestion in suggestions:

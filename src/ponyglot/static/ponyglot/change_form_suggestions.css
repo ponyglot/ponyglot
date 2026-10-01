@@ -1,0 +1,46 @@
+.ponyglot-suggestion,
+.ponyglot-summary {
+  margin: 6px 0 4px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--primary, #79aec8);
+  background: var(--darkened-bg, #f8f8f8);
+  border-radius: 4px;
+}
+.ponyglot-suggestion {
+  flex-basis: 100%;
+  max-width: 60em;
+}
+.ponyglot-suggestion[data-state="applied"] {
+  border-left-color: var(--message-success-fg, #2e7d32);
+}
+.ponyglot-suggestion[data-state="rejected"] {
+  border-left-color: var(--border-color, #ccc);
+  color: var(--body-quiet-color, #666);
+}
+.ponyglot-suggestion-head {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--body-quiet-color, #666);
+}
+.ponyglot-suggestion-text {
+  margin: 4px 0;
+  max-height: 12em;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.ponyglot-suggestion-actions,
+.ponyglot-summary-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+.ponyglot-summary-line + .ponyglot-summary-line {
+  margin-top: 8px;
+}
+.ponyglot-qa-error {
+  color: var(--error-fg, #ba2121);
+}
+.ponyglot-qa-warning {
+  color: var(--body-quiet-color, #666);
+}

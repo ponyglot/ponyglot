@@ -1,7 +1,15 @@
 {% extends ponyglot_base %}
-{% load i18n %}
-{% comment %}Extends the admin's own change form (tabbed admins included) with the button.{% endcomment %}
+{% load i18n static %}
+{% comment %}Extends the admin's own change form (tabbed admins included) with the button and, when
+translations wait, the suggestions next to their fields.{% endcomment %}
+{% block extrastyle %}{{ block.super }}{% if ponyglot_form %}
+<link rel="stylesheet" href="{% static 'ponyglot/change_form_suggestions.css' %}">{% endif %}
+{% endblock %}
 {% block object-tools-items %}
   <li><a href="{{ ponyglot_url }}">{% translate "Ponyglot translations" %}{% if ponyglot_waiting %} ({{ ponyglot_waiting }}){% endif %}</a></li>
   {{ block.super }}
+{% endblock %}
+{% block admin_change_form_document_ready %}{{ block.super }}{% if ponyglot_form %}
+{{ ponyglot_form|json_script:"ponyglot-suggestions" }}
+<script src="{% static 'ponyglot/change_form_suggestions.js' %}" defer></script>{% endif %}
 {% endblock %}

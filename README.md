@@ -63,6 +63,33 @@ bulk actions). A suggestion whose source changed in the meantime can't be applie
 translated again. The next sync reports your decisions, and approved texts (including your
 corrections) feed the translation memory.
 
+## In the admin: translation dialogs and dashboard
+
+Add `PonyglotAdminMixin` to the admins of translated models (before the library's admin class;
+works with parler's `TranslatableAdmin` and modeltranslation's `TranslationAdmin` or
+`TabbedTranslationAdmin`):
+
+```python
+from ponyglot.translations_admin import PonyglotAdminMixin
+
+@admin.register(Product)
+class ProductAdmin(PonyglotAdminMixin, TabbedTranslationAdmin):
+    ...
+```
+
+- **Change page** › *Ponyglot translations*: this object per language: texts missing or
+  outdated (**Translate**), translations waiting (**Apply**, or **Review** them one by one),
+  texts held by a quality check (a link to the Ponyglot dashboard, the only place where they
+  are resolved). If nothing was fetched in 15 minutes, opening it fetches this object's
+  translations first.
+- **Change list** › *Ponyglot translations*: the same for all objects of the model.
+- **Ponyglot › Translation dashboard** (permission *Can use the translation dashboard*): the
+  whole site per language, the last sync rounds, every content type with what waits; it can
+  translate everything missing and run a sync now.
+
+Applying needs the permission to change suggestions. Dialogs keep django CMS' modal mode
+(`_popup=1`).
+
 ## Keep content out of translation
 
 In the admin, **Ponyglot › Sync states** lists everything that is synced. The action **Exclude

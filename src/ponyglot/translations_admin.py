@@ -7,6 +7,9 @@
       @admin.register(Product)
       class ProductAdmin(PonyglotAdminMixin, TabbedTranslationAdmin): ...
 
+  Its change page also shows waiting suggestions below their fields (parler: on the
+  language's tab), to apply into the form or reject; saving the form records the decisions.
+
 - The translation dashboard (Ponyglot › Translation dashboard, permission
   `ponyglot.use_dashboard`) covers the whole site and can trigger site-wide runs.
 
@@ -345,6 +348,33 @@ def _extend(response, template_name, **context):
     return response
 
 
+def _ids(request, name):
+    return [int(value) for value in request.POST.getlist(name) if value.isdigit()]
+
+
+def _form_data(request, suggestions):
+    """What the change form's script needs: suggestions, the decisions a re-shown form (with
+    errors) had made, and its labels."""
+    return {
+        "suggestions": suggestions,
+        "applied": _ids(request, "_ponyglot_apply"),
+        "rejected": _ids(request, "_ponyglot_reject"),
+        "labels": {
+            "suggestion": _("Ponyglot suggestion"),
+            "apply": _("Apply"),
+            "reject": _("Reject"),
+            "undo": _("Undo"),
+            "apply_all": _("Apply all"),
+            "applied": _("Applied; saved with the form."),
+            "rejected": _("Rejected; recorded when the form is saved."),
+            "error": _("QA error"),
+            "warning": _("QA warning"),
+            "confirm_errors": _("This translation has a QA error. Apply it anyway?"),
+            "summary": _("Ponyglot suggestions for %(language)s: %(n)s"),
+        },
+    }
+
+
 class PonyglotAdminMixin:
     """ "Ponyglot translations" on a model admin's change page and change list."""
 
@@ -378,15 +408,104 @@ class PonyglotAdminMixin:
         adapter = adapter_for(self.model)
         if obj is None or obj.pk is None or adapter is None:
             return response
-        waiting = Suggestion.objects.filter(
+        pending = Suggestion.objects.filter(
             external_key=adapter.external_key(obj), status=SuggestionStatus.PENDING
-        ).count()
+        )
+        form = context.get("adminform") and context["adminform"].form
+        suggestions = self._form_suggestions(request, adapter, obj, form, pending)
         return _extend(
             response,
             "admin/ponyglot/change_form_button.html",
             ponyglot_url=self._url("ponyglot_object", obj.pk),
-            ponyglot_waiting=waiting,
+            ponyglot_waiting=pending.count(),
+            ponyglot_form=_form_data(request, suggestions) if suggestions else None,
         )
+
+    def _form_suggestions(self, request, adapter, obj, form, pending):
+        """The pending suggestions the change form has a field for (sources unchanged)."""
+        if form is None or not request.user.has_perm("ponyglot.change_suggestion"):
+            return []
+        names = dict(settings.LANGUAGES)
+        result = []
+        for suggestion in pending.order_by("created_at"):
+            name = adapter.form_field_name(form, suggestion.field, suggestion.language)
+            if name not in form.fields or not service.is_current(suggestion, adapter, obj):
+                continue
+            # A title brings its slug along, as applying it in the review admin would.
+            slugs = {}
+            values = {suggestion.field: suggestion.text}
+            for slug_field, slug in adapter.slug_values(obj, suggestion.language, values).items():
+                slug_name = adapter.form_field_name(form, slug_field, suggestion.language)
+                if slug_name in form.fields:
+                    slugs[slug_name] = slug
+            result.append(
+                {
+                    "id": suggestion.pk,
+                    "input": name,
+                    "text": suggestion.text,
+                    "format": suggestion.format,
+                    "language": suggestion.language,
+                    "language_name": str(names.get(suggestion.language, suggestion.language)),
+                    "slugs": slugs,
+                    "qa": [
+                        {"severity": i.get("severity", ""), "message": i.get("message", "")}
+                        for i in suggestion.qa or []
+                    ],
+                    "has_errors": suggestion.has_errors,
+                }
+            )
+        return result
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if change:
+            self._record_form_suggestions(request, obj)
+
+    def _record_form_suggestions(self, request, obj):
+        """Suggestions applied or rejected in the change form become decided once it's saved."""
+        adapter = adapter_for(self.model)
+        apply_ids, reject_ids = _ids(request, "_ponyglot_apply"), _ids(request, "_ponyglot_reject")
+        if adapter is None or not (apply_ids or reject_ids):
+            return
+        if not request.user.has_perm("ponyglot.change_suggestion"):
+            return
+        pending = Suggestion.objects.filter(
+            external_key=adapter.external_key(obj), status=SuggestionStatus.PENDING
+        )
+        result = service.record_written(list(pending.filter(pk__in=apply_ids)), request.user)
+        rejected = service.reject(list(pending.filter(pk__in=reject_ids)), request.user)
+        if result.applied:
+            messages.success(
+                request,
+                ngettext(
+                    "%(n)s translation suggestion applied.",
+                    "%(n)s translation suggestions applied.",
+                    result.applied,
+                )
+                % {"n": result.applied},
+            )
+        if rejected:
+            messages.success(
+                request,
+                ngettext(
+                    "%(n)s translation suggestion rejected.",
+                    "%(n)s translation suggestions rejected.",
+                    rejected,
+                )
+                % {"n": rejected},
+            )
+        if result.outdated:
+            messages.warning(
+                request,
+                ngettext(
+                    "%(n)s suggestion was outdated (the source changed) and will be translated "
+                    "again.",
+                    "%(n)s suggestions were outdated (the source changed) and will be translated "
+                    "again.",
+                    result.outdated,
+                )
+                % {"n": result.outdated},
+            )
 
     def changelist_view(self, request, extra_context=None):
         response = super().changelist_view(request, extra_context)

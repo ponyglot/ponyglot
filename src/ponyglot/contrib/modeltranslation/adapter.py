@@ -61,6 +61,9 @@ class ModeltranslationAdapter(ModelAdapter):
         column = self._column(field_name, language)
         return type(obj)._default_manager.filter(**{column: slug}).exclude(pk=obj.pk).exists()
 
+    def form_field_name(self, form, field_name, language):
+        return self._column(field_name, language)
+
     def write(self, obj, language, values):
         columns = []
         for field_name, text in values.items():
