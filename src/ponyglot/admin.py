@@ -5,16 +5,28 @@ import re
 
 from django import forms
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
+from django.shortcuts import redirect
+from django.template.response import TemplateResponse
+from django.urls import NoReverseMatch, path, reverse
 from django.utils.html import escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import ngettext
 
-from . import exclusions
+from . import exclusions, sync, translations_admin
 from . import suggestions as service
 from .adapters import registry
-from .models import Exclusion, HeldBack, Suggestion, SuggestionStatus, SyncState
+from .models import (
+    Exclusion,
+    HeldBack,
+    Suggestion,
+    SuggestionStatus,
+    SyncRun,
+    SyncState,
+    TranslationDashboard,
+)
 
 _TOKENS = re.compile(r"\s+|[^\s]+")
 
@@ -345,3 +357,116 @@ class HeldBackAdmin(admin.ModelAdmin):
     @admin.display(description=_("why"))
     def reason(self, obj):
         return "; ".join(issue.get("message", "") for issue in obj.issues) or "–"
+
+
+@admin.register(SyncRun)
+class SyncRunAdmin(admin.ModelAdmin):
+    """The last sync rounds: when translations were fetched, and errors."""
+
+    list_display = ["started_at", "finished_at", "unit", "ok", "summary", "error"]
+    list_filter = ["ok"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description=_("result"))
+    def summary(self, obj):
+        report = obj.report or {}
+        return _("pushed %(pushed)s, translations received %(delivered)s") % {
+            "pushed": report.get("pushed", 0),
+            "delivered": report.get("delivered", 0),
+        }
+
+
+@admin.register(TranslationDashboard)
+class TranslationDashboardAdmin(admin.ModelAdmin):
+    """Ponyglot › Translation dashboard: the whole site per language, site-wide runs
+    (translate everything missing, sync now). Needs `ponyglot.use_dashboard`."""
+
+    def _allowed(self, request):
+        return request.user.has_perm("ponyglot.use_dashboard")
+
+    def has_module_permission(self, request):
+        return self._allowed(request)
+
+    def has_view_permission(self, request, obj=None):
+        return self._allowed(request)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_urls(self):
+        view = self.admin_site.admin_view
+        return [
+            path("", view(self.dashboard_view), name="ponyglot_translationdashboard_changelist"),
+            path(
+                "<slug:action>/",
+                view(self.dashboard_action),
+                name="ponyglot_translationdashboard_action",
+            ),
+        ]
+
+    def _scope(self, request):
+        if not self._allowed(request):
+            raise PermissionDenied
+        return translations_admin.site_scope(
+            request, reverse("admin:ponyglot_translationdashboard_changelist")
+        )
+
+    def dashboard_view(self, request):
+        scope = self._scope(request)
+        last_run = sync.last_run()
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.opts,
+            **translations_admin.dialog_context(request, scope),
+            "last_run": last_run,
+            "sync_overdue": translations_admin.overdue(last_run),
+            "runs": SyncRun.objects.filter(unit="", finished_at__isnull=False)[:5],
+            "held_total": HeldBack.objects.count(),
+            "models": self._models(),
+        }
+        context["fetch_due"] = True  # "Sync now" is always offered here
+        return TemplateResponse(request, "admin/ponyglot/dialog.html", context)
+
+    def dashboard_action(self, request, action):
+        scope = self._scope(request)
+        response = translations_admin.dialog_action(request, scope, action)
+        if response is not None:
+            response.context_data.update(self.admin_site.each_context(request), opts=self.opts)
+            return response
+        url = reverse("admin:ponyglot_translationdashboard_changelist")
+        return redirect(f"{url}?_popup=1" if "_popup" in request.GET else url)
+
+    def _models(self):
+        """Synced models with their waiting translations and, if their admin has the
+        Ponyglot button, a link to its dialog."""
+        rows = []
+        for adapter in registry.all():
+            for model in getattr(adapter, "synced_models", list)():
+                prefix = translations_admin.model_prefix(adapter, model)
+                info = model._meta.app_label, model._meta.model_name
+                try:
+                    url = reverse("admin:{}_{}_ponyglot".format(*info))
+                except NoReverseMatch:
+                    url = ""
+                rows.append(
+                    {
+                        "name": model._meta.verbose_name_plural,
+                        "adapter": adapter.name,
+                        "waiting": Suggestion.objects.filter(
+                            external_key__startswith=prefix, status=SuggestionStatus.PENDING
+                        ).count(),
+                        "url": url,
+                    }
+                )
+        return rows

@@ -1,0 +1,15 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+{% block breadcrumbs %}{% endblock %}
+{% block content %}
+  <p>{% blocktranslate with c=estimate.estimated_characters s=estimate.estimated_segments %}This translation sends {{ s }} texts ({{ c }} characters) and needs your confirmation.{% endblocktranslate %}</p>
+  {% if estimate.cost.overage_characters %}<p class="errornote">{% blocktranslate with o=estimate.cost.overage_characters %}{{ o }} characters exceed this month's included volume and are billed as overage.{% endblocktranslate %}</p>{% endif %}
+  <form id="ponyglot-confirm" method="post" action="{{ scope.urls.translate }}">{% csrf_token %}
+    {% for code in languages %}<input type="hidden" name="languages" value="{{ code }}">{% endfor %}
+    <input type="hidden" name="confirm" value="1">
+  </form>
+  <div class="submit-row">
+    <button type="submit" form="ponyglot-confirm" class="button default">{% translate "Translate" %}</button>
+    <a href="{{ scope.back_url }}" class="button">{% translate "Back" %}</a>
+  </div>
+{% endblock %}

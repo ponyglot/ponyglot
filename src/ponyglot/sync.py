@@ -12,7 +12,7 @@ from . import exclusions, notifications, state
 from .adapters import registry
 from .client import APIError, Client
 from .conf import get_config
-from .models import HeldBack, Suggestion, SuggestionStatus, SyncState
+from .models import HeldBack, Suggestion, SuggestionStatus, SyncRun, SyncState
 from .suggestions import review_payload, unreported
 
 logger = logging.getLogger(__name__)
@@ -92,9 +92,15 @@ def estimate(adapter_names=None):
     return units, segments, characters
 
 
-def push(client, report):
+def push(client, report, keys=None, prefix=None):
+    """Push dirty units (`keys`: only these external keys; `prefix`: keys starting with it)."""
     batch_size = get_config().batch_size
-    pending = list(SyncState.objects.filter(dirty=True).order_by("pk"))
+    pending = SyncState.objects.filter(dirty=True).order_by("pk")
+    if keys is not None:
+        pending = pending.filter(external_key__in=keys)
+    if prefix:
+        pending = pending.filter(external_key__startswith=prefix)
+    pending = list(pending)
     batch = []
     for sync_state in pending:
         adapter = registry.get(sync_state.adapter)
@@ -187,10 +193,16 @@ def report_reviews(client, report):
     report.reviews_reported += len(suggestions)
 
 
-def pull(client, report):
+def pull(client, report, unit=None, prefix=None):
+    """Fetch and deliver finished translations (`unit`: only that unit's; `prefix`: only
+    units whose key starts with it, e.g. one model's)."""
     started = timezone.now()
     by_adapter = {}
-    for result in client.results():
+    for result in client.results(unit=unit):
+        if unit is not None and result["unit"] != unit:
+            continue  # a cloud from before the filter sends everything
+        if prefix and not result["unit"].startswith(prefix):
+            continue
         by_adapter.setdefault(result["unit"].split(":", 1)[0], []).append(result)
     for prefix, results in by_adapter.items():
         adapter = registry.get(prefix)
@@ -231,14 +243,67 @@ def refresh_held_back(client, report):
 
 
 def run(client=None, *, do_push=True, do_pull=True):
-    """One sync round; returns a `Report`. Raises `APIError` if the cloud is unreachable."""
+    """One sync round; returns a `Report`. Raises `APIError` if the cloud is unreachable.
+    Every round is recorded (`SyncRun`), so UIs can show when translations were last fetched."""
     client = client or Client()
+    record = SyncRun.objects.create()
     report = Report()
-    report.warnings = handshake(client, report)
-    if do_push:
-        push(client, report)
-    report_reviews(client, report)
-    if do_pull:
-        pull(client, report)
-        refresh_held_back(client, report)
+    try:
+        report.warnings = handshake(client, report)
+        if do_push:
+            push(client, report)
+        report_reviews(client, report)
+        if do_pull:
+            pull(client, report)
+            refresh_held_back(client, report)
+    except Exception as error:
+        _finish(record, report, error=str(error)[:2000])
+        raise
+    _finish(record, report)
     return report
+
+
+def refresh(client, external_key=None, *, prefix=None):
+    """One unit's round (or all units whose key starts with `prefix`, e.g. one model's), for
+    editor UIs when no sync schedule ran lately: push what changed, fetch the translations.
+    Recorded for the unit or prefix only (`last_fetch`, not `last_run`)."""
+    record = SyncRun.objects.create(unit=external_key or prefix or "")
+    report = Report()
+    try:
+        if external_key:
+            push(client, report, keys=[external_key])
+            pull(client, report, unit=external_key)
+        else:
+            push(client, report, prefix=prefix)
+            pull(client, report, prefix=prefix)
+    except Exception as error:
+        _finish(record, report, error=str(error)[:2000])
+        raise
+    _finish(record, report)
+    return report
+
+
+def _finish(record, report, error=""):
+    from dataclasses import asdict
+
+    record.finished_at = timezone.now()
+    record.ok = not error
+    record.error = error
+    record.report = asdict(report)
+    record.save()
+    stale = SyncRun.objects.values_list("pk", flat=True)[SyncRun.KEEP :]
+    SyncRun.objects.filter(pk__in=list(stale)).delete()
+
+
+def last_run():
+    """The latest finished full sync round (a running schedule), or None."""
+    return SyncRun.objects.filter(finished_at__isnull=False, unit="").first()
+
+
+def last_fetch(external_key):
+    """When a unit's translations were last fetched: by a full round, for this unit, or for
+    its model (a key prefix such as `parler:blog.post:`; pass a prefix to ask about it)."""
+    scopes = ["", external_key]
+    if not external_key.endswith(":"):
+        scopes.append(external_key.rsplit(":", 1)[0] + ":")
+    return SyncRun.objects.filter(finished_at__isnull=False, ok=True, unit__in=scopes).first()

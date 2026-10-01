@@ -1,0 +1,7 @@
+{% extends ponyglot_base %}
+{% load i18n %}
+{% comment %}Extends the admin's own change list with the button for all objects of the model.{% endcomment %}
+{% block object-tools-items %}
+  <li><a href="{{ ponyglot_url }}">{% translate "Ponyglot translations" %}{% if ponyglot_waiting %} ({{ ponyglot_waiting }}){% endif %}</a></li>
+  {{ block.super }}
+{% endblock %}

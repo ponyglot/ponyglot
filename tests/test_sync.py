@@ -115,6 +115,32 @@ def test_results_become_suggestions_and_are_acknowledged(api, cloud, article):
     )
 
 
+def test_refresh_handles_one_unit_only(api, cloud, article, product):
+    from ponyglot.models import SyncRun
+
+    sync.run(api)
+    article.title = "Prices"
+    article.save()
+    product.name_en = "Cup"
+    product.save()
+    key = parler.external_key(article)
+    cloud.add_result(key, "title", "de", "Preise", source="Pricing")
+    other = registry.get("modeltranslation").external_key(product)
+    cloud.add_result(other, "name", "de", "Becher", source="Mug")
+    runs = SyncRun.objects.count()
+
+    report = sync.refresh(api, key)
+
+    assert (report.pushed, report.delivered) == (1, 1)
+    assert Suggestion.objects.get().external_key == key
+    assert SyncState.objects.get(external_key=other).dirty  # left for the next sync round
+    # Recorded for the unit: its last fetch moves, the schedule's last round doesn't.
+    assert SyncRun.objects.count() == runs + 1
+    assert sync.last_fetch(key).unit == key
+    assert sync.last_run().unit == ""
+    assert sync.last_fetch(other) == sync.last_run()
+
+
 def test_a_newer_result_supersedes_the_pending_suggestion(api, cloud, article):
     key = parler.external_key(article)
     cloud.add_result(key, "title", "de", "Preise", source="Pricing")

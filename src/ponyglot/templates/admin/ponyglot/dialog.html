@@ -1,0 +1,110 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+{% block extrastyle %}{{ block.super }}
+<style>
+  .ponyglot table { width: 100%; margin: 12px 0; }
+  .ponyglot td, .ponyglot th { padding: 6px 8px; vertical-align: middle; }
+  .ponyglot td.actions { text-align: right; white-space: nowrap; }
+  .ponyglot td.actions form { display: inline-block; margin: 0 0 0 6px; }
+  .ponyglot .ok { color: var(--message-success-fg, #2e7d32); }
+  .ponyglot .muted, .ponyglot .note { color: var(--body-quiet-color, #666); }
+  .ponyglot .note { display: block; font-size: .9em; }
+  .ponyglot .warn { color: var(--error-fg, #ba2121); }
+  .ponyglot .done { padding: 16px; margin: 8px 0 12px; border-radius: 6px; background: var(--message-success-bg, #dfd); }
+</style>
+{% endblock %}
+{% block breadcrumbs %}{% if not is_popup %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate "Home" %}</a>
+  {% if scope.kind == "site" %}› <a href="{% url 'admin:app_list' app_label='ponyglot' %}">Ponyglot</a>
+  {% else %}› <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    › <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    {% if scope.obj %}› <a href="{{ scope.back_url }}">{{ scope.obj|truncatewords:"18" }}</a>{% endif %}
+  {% endif %}
+  › {% translate "Ponyglot translations" %}
+</div>
+{% endif %}{% endblock %}
+{% block content %}
+<div class="ponyglot">
+  {% if fetched.delivered %}<p class="ok">{% blocktranslate count n=fetched.delivered %}{{ n }} new translation was fetched.{% plural %}{{ n }} new translations were fetched.{% endblocktranslate %}</p>{% endif %}
+  {% if cloud_error %}<p class="errornote">{{ cloud_error }}</p>{% endif %}
+
+  {% if all_done %}
+    <div class="done">🎉 <strong>{% translate "All translations are up to date." %}</strong></div>
+  {% endif %}
+
+  <table>
+    {% for lang in languages %}
+      <tr>
+        <th>{{ lang.name }} <span class="muted">{{ lang.code|upper }}</span></th>
+        <td>
+          {% if lang.excluded %}<span class="muted">{% translate "Not translated (excluded)" %}</span>
+          {% elif lang.done %}<span class="ok">✓ {% translate "Up to date" %}</span>
+          {% else %}
+            {% if lang.waiting %}<span class="note">{% blocktranslate count n=lang.waiting %}{{ n }} translation to apply{% plural %}{{ n }} translations to apply{% endblocktranslate %}{% if lang.waiting_errors %} · <span class="warn">{% blocktranslate count n=lang.waiting_errors %}{{ n }} with a QA error{% plural %}{{ n }} with QA errors{% endblocktranslate %}</span>{% endif %}</span>{% endif %}
+            {% if lang.untranslated %}<span class="note">{% if lang.translating %}{% translate "Being translated…" %}{% else %}{% blocktranslate count n=lang.untranslated %}{{ n }} text missing or outdated{% plural %}{{ n }} texts missing or outdated{% endblocktranslate %}{% endif %}</span>{% endif %}
+            {% if lang.held %}<span class="note">{% if lang.attention_url %}<a href="{{ lang.attention_url }}" target="_blank" rel="noopener">{% endif %}{% blocktranslate count n=lang.held %}{{ n }} text held by a quality check{% plural %}{{ n }} texts held by a quality check{% endblocktranslate %}{% if lang.attention_url %} ↗</a>{% endif %}</span>{% endif %}
+            {% if counts is None and not lang.waiting %}<span class="muted">{% translate "Status unknown" %}</span>{% endif %}
+          {% endif %}
+        </td>
+        <td class="actions">
+          {% if not lang.excluded %}
+            {% if lang.waiting %}
+              <a href="{{ lang.review_url }}"{% if is_popup %} target="_top"{% endif %}>{% translate "Review" %}</a>
+              {% if can_apply %}<form method="post" action="{{ scope.urls.apply }}">{% csrf_token %}<input type="hidden" name="language" value="{{ lang.code }}"><button type="submit" class="button default">{% translate "Apply" %}</button></form>{% endif %}
+            {% endif %}
+            {% if lang.untranslated and not lang.translating %}
+              <form method="post" action="{{ scope.urls.translate }}">{% csrf_token %}<input type="hidden" name="languages" value="{{ lang.code }}"><button type="submit" class="button">{% translate "Translate" %}</button></form>
+            {% endif %}
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </table>
+  {% if languages|length and can_apply %}<p class="help">{% translate "“Apply” writes the translations into your content right away (texts with QA errors excepted: review them first)." %}</p>{% endif %}
+
+  {% if jobs %}
+    <h2>{% translate "Jobs" %}</h2>
+    <table>
+      <tr><th>{% translate "Job" %}</th><th>{% translate "Status" %}</th><th>{% translate "Languages" %}</th><th>{% translate "Progress" %}</th></tr>
+      {% for job in jobs %}
+        <tr><td>#{{ job.id }} {{ job.type }}</td><td>{{ job.status }}</td><td>{{ job.languages|join:", "|upper }}</td>
+          <td>{{ job.done_segments }} / {{ job.estimated_segments }}{% if job.failed_segments %} · {{ job.failed_segments }} {% translate "failed" %}{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  {% if scope.kind == "site" %}
+    <h2>{% translate "Sync" %}</h2>
+    <p>{% if last_run %}{% blocktranslate with when=last_run.finished_at|timesince %}Last sync: {{ when }} ago.{% endblocktranslate %}{% else %}{% translate "No sync has run yet." %}{% endif %}
+      {% if sync_overdue %}<span class="warn">{% translate "No sync ran lately: set up python manage.py ponyglot sync (cron, or --loop 60 as a worker)." %}</span>{% endif %}</p>
+    {% if held_total %}<p>{% blocktranslate count n=held_total %}{{ n }} translation is held by a quality check in Ponyglot.{% plural %}{{ n }} translations are held by a quality check in Ponyglot.{% endblocktranslate %} <a href="{% url 'admin:ponyglot_heldback_changelist' %}">{% translate "List" %}</a></p>{% endif %}
+    {% if models %}
+      <h2>{% translate "Content types" %}</h2>
+      <table>
+        {% for model in models %}
+          <tr><td>{% if model.url %}<a href="{{ model.url }}">{{ model.name|capfirst }}</a>{% else %}{{ model.name|capfirst }}{% endif %} <span class="muted">{{ model.adapter }}</span></td>
+            <td>{% if model.waiting %}{% blocktranslate count n=model.waiting %}{{ n }} translation to apply{% plural %}{{ n }} translations to apply{% endblocktranslate %}{% endif %}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+  {% endif %}
+
+  {% if scope.back_label %}<p><a href="{{ scope.back_url }}">{{ scope.back_label }}</a></p>{% endif %}
+
+  {# One form per general action with all its fields; the footer buttons submit them via form="…" #}
+  {# (django CMS submits them with form.submit(): a button's own name/value isn't sent). #}
+  <form id="ponyglot-translate" method="post" action="{{ scope.urls.translate }}">{% csrf_token %}
+    {% for code in translate_languages %}<input type="hidden" name="languages" value="{{ code }}">{% endfor %}</form>
+  <form id="ponyglot-fetch" method="post" action="{{ scope.urls.fetch }}">{% csrf_token %}</form>
+  {# General actions only, buttons only: django CMS' modal pulls them into its footer. #}
+  <div class="submit-row">
+    {% if not translating and translate_languages %}
+      {% if scope.kind != "object" or translate_languages|length > 1 or counts is None %}
+        <button type="submit" form="ponyglot-translate" class="button default">{% if counts is None %}{% translate "Send for translation" %}{% else %}{% translate "Translate all missing" %}{% endif %}</button>
+      {% endif %}
+    {% endif %}
+    {% if fetch_due %}<button type="submit" form="ponyglot-fetch" class="button">{% if scope.kind == "site" %}{% translate "Sync now" %}{% else %}{% translate "Fetch translations now" %}{% endif %}</button>{% endif %}
+  </div>
+</div>
+{% endblock %}

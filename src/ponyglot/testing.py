@@ -14,6 +14,8 @@ from ponyglot.fingerprint import fingerprint
 
 
 class FakeCloud:
+    DASHBOARD = "https://app.ponyglot.test/o/acme"
+
     def __init__(self):
         self.units = {}  # external_key → last snapshot payload
         self.pushes = []  # every pushed snapshot, in order
@@ -28,6 +30,7 @@ class FakeCloud:
         self.fail_next = []  # statuses to answer the next requests with (e.g. 503)
         self.confirm_above = None  # characters above which jobs need confirmation
         self.qa_mode = "editors"
+        self.job_status = "succeeded"  # status new jobs report (e.g. "running")
         self.languages = ["de", "fr"]  # target languages of the site
         self.states = {}  # (unit, segment key, language) → state for unit status
         self.attention = []  # items for GET /attention
@@ -104,7 +107,14 @@ class FakeCloud:
                 "path": unit.get("path", ""),
                 "segments_total": len(segments),
                 "segments_needing_work": needing,
-                "languages": [{"code": c} for c in codes],
+                "dashboard_url": f"{self.DASHBOARD}/content/{key}/",
+                "languages": [
+                    {
+                        "code": c,
+                        "attention_url": f"{self.DASHBOARD}/attention/?unit={key}&language={c}",
+                    }
+                    for c in codes
+                ],
                 "segments": segments,
             }
         if method == "DELETE" and path.startswith("/units/"):
@@ -114,6 +124,8 @@ class FakeCloud:
             return 204, None
         if (method, path) == ("GET", "/results"):
             pending = [r for r in self.results if r["id"] not in self.acked]
+            if query.get("unit"):
+                pending = [r for r in pending if r["unit"] == query["unit"]]
             start = int(query.get("cursor") or 0)
             limit = int(query.get("limit") or 100)
             page = pending[start : start + limit]
@@ -145,8 +157,42 @@ class FakeCloud:
                     "estimate": estimate,
                 }
             job_id = len(self.jobs) + 1
-            self.jobs[job_id] = {"id": job_id, "status": "succeeded", "errors": [], **estimate}
+            self.jobs[job_id] = {
+                "id": job_id,
+                "type": payload.get("type", "delta"),
+                "status": self.job_status,
+                "units": payload.get("units"),
+                "prefix": payload.get("prefix", ""),
+                "languages": payload.get("languages") or self.languages,
+                "done_segments": 0,
+                "failed_segments": 0,
+                "errors": [],
+                **estimate,
+            }
             return 202, self.jobs[job_id]
+        if (method, path) == ("GET", "/status"):
+            prefix = query.get("prefix", "")
+            units = {k: u for k, u in self.units.items() if k.startswith(prefix)}
+            counts = {
+                c: dict.fromkeys(("ok", "stale", "review", "missing", "attention"), 0)
+                for c in self.languages
+            }
+            for key, unit in units.items():
+                for segment in unit["segments"]:
+                    for code in self.languages:
+                        state = self.states.get((key, segment["key"], code), "missing")
+                        counts[code][state] += 1
+            return 200, {
+                "units_total": len(units),
+                "segments_total": sum(len(u["segments"]) for u in units.values()),
+                "glossary_terms": 0,
+                "languages": [{"code": c, **counts[c]} for c in self.languages],
+            }
+        if (method, path) == ("GET", "/jobs"):
+            jobs = list(reversed(self.jobs.values()))
+            if query.get("active") == "true":
+                jobs = [job for job in jobs if job["status"] in ("queued", "running")]
+            return 200, jobs[:20]
         if method == "GET" and path.startswith("/jobs/"):
             return 200, self.jobs[int(path.rsplit("/", 1)[1])]
         return 404, {"detail": f"not found: {method} {path}"}

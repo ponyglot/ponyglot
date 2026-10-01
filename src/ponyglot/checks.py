@@ -25,6 +25,15 @@ def check_settings(app_configs, **kwargs):
                 id="ponyglot.E001",
             )
         )
+    if not config.api_url.rstrip("/").endswith("/v1"):
+        messages.append(
+            Warning(
+                f"PONYGLOT['API_URL'] is {config.api_url!r}; the API's address ends in /v1.",
+                hint="e.g. https://api.ponyglot.app/v1 (the default). On a cloud with path-based "
+                "routing: https://<host>/api/v1.",
+                id="ponyglot.W003",
+            )
+        )
     if not getattr(settings, "USE_I18N", True):
         messages.append(Warning("USE_I18N is off.", id="ponyglot.W002"))
     return messages

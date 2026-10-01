@@ -1,0 +1,7 @@
+{% extends ponyglot_base %}
+{% load i18n %}
+{% comment %}Extends the admin's own change form (tabbed admins included) with the button.{% endcomment %}
+{% block object-tools-items %}
+  <li><a href="{{ ponyglot_url }}">{% translate "Ponyglot translations" %}{% if ponyglot_waiting %} ({{ ponyglot_waiting }}){% endif %}</a></li>
+  {{ block.super }}
+{% endblock %}

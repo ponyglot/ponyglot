@@ -139,3 +139,37 @@ class HeldBack(models.Model):
 
     def __str__(self):
         return f"{self.label or self.external_key} · {self.key} [{self.language}]"
+
+
+class SyncRun(models.Model):
+    """One `ponyglot sync` round (kept for the last runs): when translations were last fetched,
+    and whether a sync schedule is running at all. Rounds for one unit (editor UIs fetching a
+    page's translations) carry its key in `unit`."""
+
+    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    ok = models.BooleanField(default=False)
+    report = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True)
+    unit = models.CharField(max_length=255, blank=True, db_index=True)
+
+    KEEP = 100
+
+    class Meta:
+        ordering = ["-started_at"]
+        verbose_name = _("sync run")
+        verbose_name_plural = _("sync runs")
+
+    def __str__(self):
+        return f"{self.started_at:%Y-%m-%d %H:%M} {'ok' if self.ok else 'failed'}"
+
+
+class TranslationDashboard(SyncRun):
+    """The site-wide translation dashboard in the admin (its own permission)."""
+
+    class Meta:
+        proxy = True
+        default_permissions = ()
+        permissions = [("use_dashboard", _("Can use the translation dashboard (site-wide runs)"))]
+        verbose_name = _("translation dashboard")
+        verbose_name_plural = _("translation dashboard")

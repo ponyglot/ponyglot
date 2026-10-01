@@ -88,7 +88,16 @@ class Client:
                 delay = 2**attempt
                 logger.warning("Ponyglot %s %s: %s; retrying in %ss", method, path, status, delay)
                 time.sleep(delay)
-        data = json.loads(content) if content else None
+        try:
+            data = json.loads(content) if content else None
+        except ValueError:
+            # Not the API: e.g. an HTML error page because API_URL points to the dashboard or
+            # misses "/v1".
+            raise APIError(
+                status,
+                f"{method} {url} didn't answer like the Ponyglot API (not JSON). Check "
+                f"PONYGLOT['API_URL'] (now {self.api_url}); it ends in /v1.",
+            ) from None
         if status >= 400:
             message = data.get("detail", data) if isinstance(data, dict) else content[:500]
             raise APIError(status, message, data)
@@ -119,20 +128,27 @@ class Client:
     def unit_status(self, external_key):
         return self.request("GET", f"/units/{urllib.parse.quote(external_key, safe='')}/status")
 
-    def site_status(self):
-        return self.request("GET", "/status")
+    def site_status(self, prefix=None):
+        """Counts per language (`prefix`: units whose key starts with it, e.g. one model's)."""
+        return self.request("GET", "/status", params={"prefix": prefix} if prefix else None)
 
     def create_job(self, **payload):
         return self.request("POST", "/jobs", payload)
 
+    def jobs(self, active=False):
+        """The site's 20 most recent jobs (`active`: only queued and running)."""
+        return self.request("GET", "/jobs", params={"active": "true"} if active else None)
+
     def job(self, job_id):
         return self.request("GET", f"/jobs/{int(job_id)}")
 
-    def results(self, limit=100):
-        """All translations ready for delivery (follows the cursor)."""
+    def results(self, limit=100, unit=None):
+        """All translations ready for delivery (follows the cursor); `unit`: only that unit's
+        (a cloud from before the filter ignores it, so callers that need it filter again)."""
         cursor = None
         while True:
-            page = self.request("GET", "/results", params={"cursor": cursor, "limit": limit})
+            params = {"cursor": cursor, "limit": limit, "unit": unit}
+            page = self.request("GET", "/results", params=params)
             yield from page["results"]
             cursor = page.get("next_cursor")
             if not cursor:

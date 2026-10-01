@@ -167,3 +167,29 @@ def test_checks(settings):
     settings.PONYGLOT = {"SOURCE_LANGUAGE": "es"}
     ids = {message.id for message in check_settings(None)}
     assert ids == {"ponyglot.W001", "ponyglot.E001"}
+
+
+def test_non_json_answers_become_api_errors(cloud):
+    def html_page(method, url, headers, body, timeout):
+        return 404, b"\n<!doctype html><title>Not Found</title>"
+
+    client = Client(transport=html_page)
+    with pytest.raises(APIError) as error:
+        client.unit_status("djangocms:cms.pagecontent:1")
+    assert error.value.status == 404
+    assert "not JSON" in str(error.value) and "API_URL" in str(error.value)
+
+
+def test_api_url_without_v1_is_flagged(settings):
+    settings.PONYGLOT = {**settings.PONYGLOT, "API_URL": "https://ponyglot-staging.example/app"}
+    assert "ponyglot.W003" in {message.id for message in check_settings(None)}
+
+
+def test_results_can_be_requested_for_one_unit(cloud):
+    cloud.results = [
+        {"id": 1, "unit": "a", "segment": "t", "language": "de", "text": "x"},
+        {"id": 2, "unit": "b", "segment": "t", "language": "de", "text": "y"},
+    ]
+    client = Client(transport=cloud)
+    assert [r["id"] for r in client.results(unit="b")] == [2]
+    assert [r["id"] for r in client.results()] == [1, 2]
