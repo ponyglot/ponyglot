@@ -101,6 +101,9 @@ class Adapter:
     # Status of a suggestion once written: model adapters apply for good ("applied", reported
     # as approved); draft-based adapters write a draft ("drafted": approved on publishing).
     applied_status = "applied"
+    # Page-like content systems come first in the documents overview's content type filter,
+    # in this order (django CMS 10, Wagtail 20); None: after them (models).
+    overview_order = None
 
     def watched_models(self):
         """`{model: owner(instance) -> object or None}`: saves of these models mark the owning

@@ -1,0 +1,26 @@
+{% load i18n %}{# One row per document, a column per language: what needs doing. #}
+<table>
+  <thead><tr>
+    {% if selectable %}<th><input type="checkbox" aria-label="{% translate 'Select all' %}" onclick="for (const box of this.form.querySelectorAll('input[name=keys]')) box.checked = this.checked"></th>{% endif %}
+    <th>{% translate "Document" %}</th>
+    {% for lang in shown_languages %}<th>{{ lang.name }} <span class="muted">{{ lang.code|upper }}</span></th>{% endfor %}
+  </tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      {% if selectable %}<td><input type="checkbox" name="keys" value="{{ row.key }}" aria-label="{{ row.label }}"></td>{% endif %}
+      <td>{% if row.url %}<a href="{{ row.url }}">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}
+        <span class="note muted">{{ row.kind|capfirst }}{% if row.path %} · {{ row.path }}{% endif %}</span></td>
+      {% for cell in row.cells %}
+        <td>
+          {% if cell.untranslated %}<span class="note">{% if cell.missing %}{% blocktranslate count n=cell.missing %}{{ n }} missing{% plural %}{{ n }} missing{% endblocktranslate %}{% endif %}{% if cell.missing and cell.stale %} · {% endif %}{% if cell.stale %}{% blocktranslate count n=cell.stale %}{{ n }} outdated{% plural %}{{ n }} outdated{% endblocktranslate %}{% endif %}</span>{% endif %}
+          {% if cell.to_apply %}<span class="note"><a href="{{ cell.apply_url }}">{% blocktranslate count n=cell.to_apply %}{{ n }} to apply{% plural %}{{ n }} to apply{% endblocktranslate %}</a></span>{% endif %}
+          {% if cell.with_editors %}<span class="note muted">{% blocktranslate count n=cell.with_editors %}{{ n }} in a draft{% plural %}{{ n }} in a draft{% endblocktranslate %}</span>{% endif %}
+          {% if cell.held %}<span class="note">{% if cell.held_url %}<a href="{{ cell.held_url }}" target="_blank" rel="noopener">{% endif %}{% blocktranslate count n=cell.held %}{{ n }} held by QA{% plural %}{{ n }} held by QA{% endblocktranslate %}{% if cell.held_url %} ↗</a>{% endif %}</span>{% endif %}
+          {% if not cell.untranslated and not cell.to_apply and not cell.with_editors and not cell.held %}<span class="ok">✓</span>{% endif %}
+        </td>
+      {% endfor %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>

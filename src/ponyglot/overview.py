@@ -29,8 +29,9 @@ ACTIONS = ("translate", "apply")
 
 
 def content_kinds():
-    """`[(key prefix, label)]` of all adapters, for the content type filter."""
-    return [kind for adapter in registry.all() for kind in adapter.content_kinds()]
+    """`[(key prefix, label)]` of all adapters, for the content type filter: page-like
+    systems first (by `overview_order`: django CMS, then Wagtail), then the models."""
+    return [kind for adapter in _ordered_adapters() for kind in adapter.content_kinds()]
 
 
 def target_languages():
@@ -111,16 +112,45 @@ def _rows(units, languages, language_filter):
     return rows
 
 
+def _ordered_adapters():
+    """Page-like content systems first (by `overview_order`: django CMS, then Wagtail), then
+    the rest (models)."""
+    return sorted(registry.all(), key=lambda a: (a.overview_order is None, a.overview_order or 0))
+
+
+def _page(client, prefix, language, cursor, limit=None):
+    """One page of documents: `(units, next cursor)`. Without a content type filter, the
+    adapters' documents come one adapter after the other, so the cursor is
+    `<adapter index>:<cloud cursor>`."""
+    limit = limit or PAGE_SIZE
+    prefixes = [prefix] if prefix else [f"{a.name}:" for a in _ordered_adapters()]
+    index, _sep, inner = (cursor or "0:").partition(":")
+    index = int(index) if index.isdigit() else 0
+    units = []
+    while index < len(prefixes):
+        page = client.units_needing_work(
+            prefix=prefixes[index],
+            language=language or None,
+            cursor=inner or None,
+            limit=limit - len(units),
+        )
+        units += page["units"]
+        inner = page.get("next_cursor") or ""
+        if inner:  # the page is full
+            break
+        index += 1
+        if len(units) == limit:
+            break
+    return units, (f"{index}:{inner}" if index < len(prefixes) else None)
+
+
 def context(request):
     prefix, language = _filters(request)
     cursor = request.GET.get("cursor") or None
     languages = target_languages()
     units, next_cursor, cloud_error = [], None, ""
     try:
-        page = Client().units_needing_work(
-            prefix=prefix or None, language=language or None, cursor=cursor, limit=PAGE_SIZE
-        )
-        units, next_cursor = page["units"], page.get("next_cursor")
+        units, next_cursor = _page(Client(), prefix, language, cursor)
     except (APIError, ConfigurationError) as error:
         cloud_error = str(error)
 

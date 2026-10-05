@@ -440,7 +440,9 @@ class TranslationDashboardAdmin(admin.ModelAdmin):
             "runs": SyncRun.objects.filter(unit="", finished_at__isnull=False)[:5],
             "held_total": HeldBack.objects.count(),
             "models": self._models(),
+            "documents_url": reverse("admin:ponyglot_translationdashboard_documents"),
         }
+
         context["fetch_due"] = True  # "Sync now" is always offered here
         return TemplateResponse(request, "admin/ponyglot/dialog.html", context)
 

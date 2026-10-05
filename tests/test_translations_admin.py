@@ -108,6 +108,7 @@ def test_dashboard_needs_its_permission(client, admin_client, dialogs_cloud, api
     html = client.get("/admin/ponyglot/translationdashboard/").content.decode()
     assert "Translation dashboard" in html and "No sync has run yet." in html
     assert ("ponyglot-fetch", "Sync now") in footer(html)
+    assert "No sync ran lately." in html and "manage.py" not in html
     assert "Products" in html  # content types
 
     client.post("/admin/ponyglot/translationdashboard/fetch/")

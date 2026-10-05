@@ -10,6 +10,8 @@
   .ponyglot .muted, .ponyglot .note { color: var(--body-quiet-color, #666); }
   .ponyglot .note { display: block; font-size: .9em; }
   .ponyglot .warn { color: var(--error-fg, #ba2121); }
+  .ponyglot .history { margin: 16px 0; }
+  .ponyglot .history summary { cursor: pointer; font-weight: bold; }
   .ponyglot .done { padding: 16px; margin: 8px 0 12px; border-radius: 6px; background: var(--message-success-bg, #dfd); }
 </style>
 {% endblock %}
@@ -63,23 +65,15 @@
   </table>
   {% if languages|length and can_apply %}<p class="help">{% translate "“Apply” writes the translations into your content right away (texts with QA errors excepted: review them first)." %}</p>{% endif %}
 
-  {% if jobs %}
-    <h2>{% translate "Jobs" %}</h2>
-    <table>
-      <tr><th>{% translate "Job" %}</th><th>{% translate "Status" %}</th><th>{% translate "Languages" %}</th><th>{% translate "Progress" %}</th></tr>
-      {% for job in jobs %}
-        <tr><td>#{{ job.id }} {{ job.type }}</td><td>{{ job.status }}</td><td>{{ job.languages|join:", "|upper }}</td>
-          <td>{{ job.done_segments }} / {{ job.estimated_segments }}{% if job.failed_segments %} · {{ job.failed_segments }} {% translate "failed" %}{% endif %}</td></tr>
-      {% endfor %}
-    </table>
-  {% endif %}
-
   {% if scope.kind == "site" %}
-    <p><a href="{% url 'admin:ponyglot_translationdashboard_documents' %}{{ popup_qs }}">{% translate "Which documents need attention" %} →</a></p>
-    <h2>{% translate "Sync" %}</h2>
-    <p>{% if last_run %}{% blocktranslate with when=last_run.finished_at|timesince %}Last sync: {{ when }} ago.{% endblocktranslate %}{% else %}{% translate "No sync has run yet." %}{% endif %}
-      {% if sync_overdue %}<span class="warn">{% translate "No sync ran lately: set up python manage.py ponyglot sync (cron, or --loop 60 as a worker)." %}</span>{% endif %}</p>
-    {% if held_total %}<p>{% blocktranslate count n=held_total %}{{ n }} translation is held by a quality check in Ponyglot.{% plural %}{{ n }} translations are held by a quality check in Ponyglot.{% endblocktranslate %} <a href="{% url 'admin:ponyglot_heldback_changelist' %}">{% translate "List" %}</a></p>{% endif %}
+    <p class="help">{% if last_run %}{% blocktranslate with when=last_run.finished_at|timesince %}Last sync: {{ when }} ago.{% endblocktranslate %}{% else %}{% translate "No sync has run yet." %}{% endif %}
+      {% if sync_overdue %}<span class="warn">{% translate "No sync ran lately. “Sync now” sends changes and fetches finished translations." %}</span>{% endif %}
+      {% if held_total %}<a href="{% url 'admin:ponyglot_heldback_changelist' %}">{% blocktranslate count n=held_total %}{{ n }} translation is held by a quality check in Ponyglot.{% plural %}{{ n }} translations are held by a quality check in Ponyglot.{% endblocktranslate %}</a>{% endif %}</p>
+
+    <h2>{% translate "Documents" %}</h2>
+    <p><a href="{{ documents_url }}{{ popup_qs }}">{% translate "Which documents need attention" %} →</a>
+      <span class="note">{% translate "Every document with a gap, per language: open it, or translate and apply in bulk." %}</span></p>
+
     {% if models %}
       <h2>{% translate "Content types" %}</h2>
       <table>
@@ -87,6 +81,40 @@
           <tr><td>{% if model.url %}<a href="{{ model.url }}">{{ model.name|capfirst }}</a>{% else %}{{ model.name|capfirst }}{% endif %} <span class="muted">{{ model.adapter }}</span></td>
             <td>{% if model.waiting %}{% blocktranslate count n=model.waiting %}{{ n }} translation to apply{% plural %}{{ n }} translations to apply{% endblocktranslate %}{% endif %}</td>
             <td class="actions"><a href="{{ model.documents_url }}">{% translate "Documents" %}</a></td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+
+    <details class="history">
+      <summary>{% translate "Jobs and syncs" %}{% if translating %} <span class="muted">({% translate "a job is running" %})</span>{% endif %}</summary>
+      {% if jobs %}
+        <table>
+          <tr><th>{% translate "Job" %}</th><th>{% translate "Status" %}</th><th>{% translate "Languages" %}</th><th>{% translate "Progress" %}</th></tr>
+          {% for job in jobs %}
+            <tr><td>#{{ job.id }} {{ job.type }}</td><td>{{ job.status }}</td><td>{{ job.languages|join:", "|upper }}</td>
+              <td>{{ job.done_segments }} / {{ job.estimated_segments }}{% if job.failed_segments %} · {{ job.failed_segments }} {% translate "failed" %}{% endif %}</td></tr>
+          {% endfor %}
+        </table>
+      {% else %}<p class="muted">{% translate "No recent jobs." %}</p>{% endif %}
+      {% if runs %}
+        <table>
+          <tr><th>{% translate "Sync" %}</th><th>{% translate "Result" %}</th></tr>
+          {% for run in runs %}
+            <tr><td>{{ run.started_at|date:"SHORT_DATETIME_FORMAT" }}</td>
+              <td>{% if run.ok %}{% blocktranslate with pushed=run.report.pushed|default:0 delivered=run.report.delivered|default:0 %}{{ pushed }} sent, {{ delivered }} received{% endblocktranslate %}{% else %}<span class="warn">{{ run.error|default:_("failed")|truncatechars:120 }}</span>{% endif %}</td></tr>
+          {% endfor %}
+        </table>
+      {% endif %}
+      <p><a href="{% url 'admin:ponyglot_syncrun_changelist' %}">{% translate "All sync runs" %}</a></p>
+    </details>
+  {% else %}
+    {% if jobs %}
+      <h2>{% translate "Jobs" %}</h2>
+      <table>
+        <tr><th>{% translate "Job" %}</th><th>{% translate "Status" %}</th><th>{% translate "Languages" %}</th><th>{% translate "Progress" %}</th></tr>
+        {% for job in jobs %}
+          <tr><td>#{{ job.id }} {{ job.type }}</td><td>{{ job.status }}</td><td>{{ job.languages|join:", "|upper }}</td>
+            <td>{{ job.done_segments }} / {{ job.estimated_segments }}{% if job.failed_segments %} · {{ job.failed_segments }} {% translate "failed" %}{% endif %}</td></tr>
         {% endfor %}
       </table>
     {% endif %}

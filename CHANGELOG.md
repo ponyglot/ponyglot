@@ -36,11 +36,14 @@ First release: the Django library that connects a site to Ponyglot. Requires Dja
 - Ponyglot › Translation dashboard (permission *Can use the translation dashboard*): the whole
   site per language, sync history, content types with what waits; translate everything
   missing, sync now.
+- The translation dashboard reads top to bottom: languages, the link to the documents that
+  need attention, the content types, and jobs and sync runs folded away.
 - Translation dashboard › *Which documents need attention*: every document with translations
   missing, outdated, waiting to be applied, in a draft or held by QA, per language, filtered
   by content type and language. Each links to where it's handled (its dialog, or a
   connector's status page); select documents to translate them or apply their waiting
-  translations. Changes not sent yet and failed sends are counted. Needs the cloud's
+  translations. Page-like content comes first (django CMS, then Wagtail;
+  `Adapter.overview_order`), then the models. Changes not sent yet and failed sends are counted. Needs the cloud's
   `GET /units`.
 
 ### Control

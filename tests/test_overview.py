@@ -4,6 +4,7 @@ import pytest
 from django.contrib.auth.models import Permission, User
 
 from ponyglot import sync
+from ponyglot.adapters import Adapter, registry
 from ponyglot.client import Client
 from ponyglot.models import Suggestion, SyncState
 
@@ -120,3 +121,62 @@ def test_cloud_errors_are_shown(admin_client, cloud_docs):
     cloud_docs.fail_next = [401]
     html = admin_client.get(URL).content.decode()
     assert "errornote" in html and "HTTP 401" in html
+
+
+class Pages(Adapter):
+    """A page-like content system (as django CMS or Wagtail would be)."""
+
+    def __init__(self, name, order):
+        self.name, self.overview_order = name, order
+
+    def translation_url(self, external_key):
+        return f"/admin/{self.name}/{external_key.rsplit(':', 1)[1]}/"
+
+
+@pytest.fixture
+def page_systems(cloud_docs):
+    systems = [Pages("wagtail", 20), Pages("djangocms", 10)]
+    for system in systems:
+        registry.register(system)
+    for name, label in (("wagtail", "Blog"), ("djangocms", "Home"), ("djangocms", "About")):
+        key = f"{name}:page:{label.lower()}"
+        cloud_docs.units[key] = {"label": label, "segments": [{"key": "title", "text": label}]}
+    yield cloud_docs
+    for system in systems:
+        registry.unregister(system.name)
+
+
+def test_dashboard_links_the_documents_and_folds_history(admin_client, page_systems):
+    html = admin_client.get("/admin/ponyglot/translationdashboard/").content.decode()
+    order = [
+        html.index(text)
+        for text in ("German", f'href="{URL}"', "Content types", '<details class="history">')
+    ]
+    assert order == sorted(order)  # languages, the documents link, models, history
+    assert "/admin/djangocms/home/" not in html  # no second, partial list of documents
+    assert '<details class="history" open' not in html
+
+
+def test_page_systems_come_first_in_the_filter(admin_client, page_systems):
+    html = admin_client.get(URL).content.decode()
+    order = [
+        html.index(f'value="{prefix}"')
+        for prefix in ("djangocms:", "wagtail:", "modeltranslation:testapp.product:")
+    ]
+    assert order == sorted(order)
+    assert html.index("/admin/djangocms/home/") < html.index("/admin/wagtail/blog/")
+
+
+def test_pages_run_through_the_systems_in_order(admin_client, page_systems, monkeypatch):
+    import html as html_lib
+    import re
+
+    monkeypatch.setattr("ponyglot.overview.PAGE_SIZE", 2)
+    labels, url = [], URL
+    while url:
+        html = admin_client.get(url).content.decode()
+        labels += re.findall(r'name="keys" value="[^"]+" aria-label="([^"]+)"', html)
+        found = re.search(r'<a href="([^"]+)">Next page', html)
+        url = URL + html_lib.unescape(found.group(1)) if found else ""
+    assert labels[:3] == ["Home", "About", "Blog"]  # django CMS, Wagtail, then the models
+    assert len(labels) == 5
