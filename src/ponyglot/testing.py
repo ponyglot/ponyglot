@@ -125,7 +125,8 @@ class FakeCloud:
             self.deleted.append(key)
             return 204, None
         if (method, path) == ("GET", "/results"):
-            pending = [r for r in self.results if r["id"] not in self.acked]
+            reviewed = {r["id"] for r in self.reviews}  # approved/rejected: not deliverable
+            pending = [r for r in self.results if r["id"] not in {*self.acked, *reviewed}]
             if query.get("unit"):
                 pending = [r for r in pending if r["unit"] == query["unit"]]
             start = int(query.get("cursor") or 0)
@@ -244,7 +245,9 @@ class FakeCloud:
             "next_cursor": str(start + limit) if more else None,
         }
 
-    def add_result(self, unit, key, language, text, *, source, format="plain", qa=None):
+    def add_result(
+        self, unit, key, language, text, *, source, format="plain", qa=None, replaces=""
+    ):
         result = {
             "id": f"r_{next(self._ids)}",
             "unit": unit,
@@ -257,6 +260,7 @@ class FakeCloud:
             "engine": "deepl",
             "job_id": 1,
             "qa": qa or [],
+            "replaces": replaces,
         }
         self.results.append(result)
         return result

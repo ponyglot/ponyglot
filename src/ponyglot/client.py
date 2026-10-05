@@ -50,7 +50,8 @@ class Client:
     """
 
     def __init__(self, api_key=None, api_url=None, *, timeout=None, transport=None, retries=3):
-        config = get_config()
+        # Django settings only for what isn't passed: the gettext CLI runs without Django.
+        config = get_config() if not (api_key and api_url and timeout) else None
         self.api_key = api_key or config.api_key
         self.api_url = (api_url or config.api_url).rstrip("/")
         if not self.api_key:

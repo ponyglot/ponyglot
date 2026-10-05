@@ -46,6 +46,23 @@ First release: the Django library that connects a site to Ponyglot. Requires Dja
   `Adapter.overview_order`), then the models. Changes not sent yet and failed sends are counted. Needs the cloud's
   `GET /units`.
 
+### gettext catalogs (`ponyglot po sync`)
+
+- A `ponyglot` command that needs no Django settings (`pip install "ponyglot[gettext]"`,
+  `PONYGLOT_API_KEY`, `PONYGLOT_API_URL`). `ponyglot po sync [locale …]` pushes each catalog
+  as a unit (entries by `msgctxt` + `msgid`, so moved lines don't matter; `msgctxt` as context,
+  `#.` comments as notes, plurals for two-form languages), imports existing translations,
+  requests what's missing or stale, waits for the job, and writes the translations into the
+  `.po` files (`--fuzzy`: flagged fuzzy) and `.mo` files.
+- Approval by merging: translations awaiting approval aren't acknowledged, so every run gets
+  them again; once a catalog contains one (not fuzzy), the next run reports it approved, with
+  other wording as a correction. Rewritten with GNU `msgcat` when installed, so diffs only
+  show real changes.
+- `Client` takes the key, URL and timeout without Django settings.
+- Updates of approved translations (results with `replaces`, after an edit in the cloud's
+  translation memory) are written while the catalog still has the replaced text, and approved
+  once merged. `FakeCloud.add_result(…, replaces=…)`.
+
 ### Control
 
 - Exclusions: keep objects (or some of their languages) out of translation from the admin;

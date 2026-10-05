@@ -151,6 +151,24 @@ link other languages with `{% get_translated_url %}`. When a slug follows a chan
 object's old URL in that language stops working unless you add a redirect. To keep a model's
 slugs out of this, list them in `EXCLUDE_FIELDS`.
 
+## gettext catalogs
+
+`ponyglot po sync` translates `.po` files through Ponyglot, without Django settings:
+
+```console
+$ pip install "ponyglot[gettext]"
+$ export PONYGLOT_API_KEY=pg_…   # a site with the gettext adapter
+$ python manage.py makemessages -l de -l fr
+$ ponyglot po sync locale        # --fuzzy, --no-translate, --yes, --domain, --no-mo
+```
+
+Each run pushes every catalog (one unit per domain and locale directory; existing
+translations are imported), requests translation of what's missing or stale, waits for the job
+and writes the results into the `.po` and `.mo` files. Run it on a checkout of your default
+branch and commit the result to a review branch: merging is the approval. The next run finds
+the translations in the catalogs and reports them approved (changed wording as corrections).
+With `--fuzzy`, new translations are flagged fuzzy and count as approved once the flag is gone.
+
 ## For connector authors
 
 Adapters subclass `ponyglot.adapters.Adapter` (see `ModelAdapter` and djangocms-ponyglot), set

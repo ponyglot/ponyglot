@@ -30,6 +30,10 @@ classifiers = [
 [project.optional-dependencies]
 parler = ["django-parler>=2.3"]
 modeltranslation = ["django-modeltranslation>=0.18"]
+gettext = ["polib>=1.2"]
+
+[project.scripts]
+ponyglot = "ponyglot.cli:main"
 
 [project.urls]
 Homepage = "https://ponyglot.app"
@@ -39,6 +43,7 @@ Documentation = "https://docs.ponyglot.app"
 dev = [
   "django-modeltranslation>=0.18",
   "django-parler>=2.3",
+  "polib>=1.2",
   "pytest>=8",
   "pytest-django>=4.9",
   "ruff>=0.12",
