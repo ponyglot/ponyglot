@@ -4,7 +4,7 @@ Ponyglot core: one translation layer for your Django stack. This package holds t
 the sync, the review admin and the **django-parler** and **django-modeltranslation** adapters.
 The django CMS and Wagtail connectors (`djangocms-ponyglot`, `wagtail-ponyglot`) build on it.
 
-**Early access, pre-alpha.** APIs may change. See https://ponyglot.app.
+**Early access, alpha.** APIs may change. See https://ponyglot.app.
 Requires Django 5.2 or newer and Python 3.10 or newer.
 
 Ponyglot keeps your content's translations consistent (one glossary and translation memory),
@@ -85,7 +85,8 @@ class ProductAdmin(PonyglotAdminMixin, TabbedTranslationAdmin):
 - **Change list** › *Ponyglot translations*: the same for all objects of the model.
 - **Ponyglot › Translation dashboard** (permission *Can use the translation dashboard*): the
   whole site per language, the last sync rounds, every content type with what waits; it can
-  translate everything missing and run a sync now.
+  translate everything missing and run a sync now. *Which documents need attention* lists
+  every document with a gap, per language, to open or to translate and apply in bulk.
 
 Applying needs the permission to change suggestions. Dialogs keep django CMS' modal mode
 (`_popup=1`).

@@ -132,6 +132,11 @@ class Client:
         """Counts per language (`prefix`: units whose key starts with it, e.g. one model's)."""
         return self.request("GET", "/status", params={"prefix": prefix} if prefix else None)
 
+    def units_needing_work(self, prefix=None, language=None, cursor=None, limit=50):
+        """One page of the units with something not up to date (`{"units", "next_cursor"}`)."""
+        params = {"prefix": prefix, "language": language, "cursor": cursor, "limit": limit}
+        return self.request("GET", "/units", params=params)
+
     def create_job(self, **payload):
         return self.request("POST", "/jobs", payload)
 

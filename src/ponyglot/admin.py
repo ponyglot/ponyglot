@@ -11,11 +11,12 @@ from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import NoReverseMatch, path, reverse
 from django.utils.html import escape, format_html, format_html_join
+from django.utils.http import urlencode
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import ngettext
 
-from . import exclusions, sync, translations_admin
+from . import exclusions, overview, sync, translations_admin
 from . import suggestions as service
 from .adapters import registry
 from .models import (
@@ -409,6 +410,11 @@ class TranslationDashboardAdmin(admin.ModelAdmin):
         return [
             path("", view(self.dashboard_view), name="ponyglot_translationdashboard_changelist"),
             path(
+                "documents/",
+                view(self.documents_view),
+                name="ponyglot_translationdashboard_documents",
+            ),
+            path(
                 "<slug:action>/",
                 view(self.dashboard_action),
                 name="ponyglot_translationdashboard_action",
@@ -447,10 +453,27 @@ class TranslationDashboardAdmin(admin.ModelAdmin):
         url = reverse("admin:ponyglot_translationdashboard_changelist")
         return redirect(f"{url}?_popup=1" if "_popup" in request.GET else url)
 
+    def documents_view(self, request):
+        """The documents that need attention, filtered by content type and language; POST
+        runs a bulk action on the selected ones."""
+        if not self._allowed(request):
+            raise PermissionDenied
+        if request.method == "POST":
+            response = overview.action(request)
+            if response is None:
+                return redirect(request.get_full_path())
+        else:
+            response = TemplateResponse(
+                request, "admin/ponyglot/documents.html", overview.context(request)
+            )
+        response.context_data.update(self.admin_site.each_context(request), opts=self.opts)
+        return response
+
     def _models(self):
         """Synced models with their waiting translations and, if their admin has the
         Ponyglot button, a link to its dialog."""
         rows = []
+        documents = reverse("admin:ponyglot_translationdashboard_documents")
         for adapter in registry.all():
             for model in getattr(adapter, "synced_models", list)():
                 prefix = translations_admin.model_prefix(adapter, model)
@@ -467,6 +490,7 @@ class TranslationDashboardAdmin(admin.ModelAdmin):
                             external_key__startswith=prefix, status=SuggestionStatus.PENDING
                         ).count(),
                         "url": url,
+                        "documents_url": f"{documents}?{urlencode({'prefix': prefix})}",
                     }
                 )
         return rows

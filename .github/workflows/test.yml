@@ -1,0 +1,45 @@
+# Lint, migrations check and the tests on every supported Python × Django combination (the
+# same matrix as `make matrix`), on pushes to main and on pull requests.
+# Actions are pinned to commit SHAs; update them deliberately.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: make lint
+      - run: make migrations-check
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { python: "3.10", django: "5.2" }
+          - { python: "3.14", django: "5.2" }
+          - { python: "3.12", django: "6.0" }
+          - { python: "3.14", django: "6.0" }
+    name: Python ${{ matrix.python }}, Django ${{ matrix.django }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: make test-django PY=${{ matrix.python }} DJANGO=${{ matrix.django }}

@@ -1,0 +1,100 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+{% block extrastyle %}{{ block.super }}
+<style>
+  .ponyglot table { width: 100%; margin: 12px 0; }
+  .ponyglot td, .ponyglot th { padding: 6px 8px; vertical-align: top; }
+  .ponyglot .muted { color: var(--body-quiet-color, #666); }
+  .ponyglot .note { display: block; font-size: .9em; white-space: nowrap; }
+  .ponyglot .ok { color: var(--message-success-fg, #2e7d32); }
+  .ponyglot .warn { color: var(--error-fg, #ba2121); }
+  .ponyglot .filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 8px 0; }
+  .ponyglot .filters label { font-weight: bold; margin-right: 4px; }
+  .ponyglot .done { padding: 16px; margin: 8px 0 12px; border-radius: 6px; background: var(--message-success-bg, #dfd); }
+  .ponyglot .paging { margin: 12px 0; }
+</style>
+{% endblock %}
+{% block breadcrumbs %}{% if not is_popup %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate "Home" %}</a>
+  › <a href="{% url 'admin:app_list' app_label='ponyglot' %}">Ponyglot</a>
+  › <a href="{% url 'admin:ponyglot_translationdashboard_changelist' %}">{% translate "Translation dashboard" %}</a>
+  › {% translate "Documents" %}
+</div>
+{% endif %}{% endblock %}
+{% block content %}
+<div class="ponyglot">
+  <p>{% translate "Documents with translations missing, outdated, waiting for an editor or held by a quality check. Open a document to handle it, or select documents and run an action." %}</p>
+
+  {% if failed or unsent %}
+    <p>
+      {% if failed %}<span class="warn"><a href="{{ failed_url }}">{% blocktranslate count n=failed %}{{ n }} document couldn't be sent to Ponyglot.{% plural %}{{ n }} documents couldn't be sent to Ponyglot.{% endblocktranslate %}</a></span>{% endif %}
+      {% if unsent %}<span class="muted">{% blocktranslate count n=unsent %}{{ n }} change is sent with the next sync.{% plural %}{{ n }} changes are sent with the next sync.{% endblocktranslate %}</span>{% endif %}
+    </p>
+  {% endif %}
+
+  <form method="get" class="filters">
+    {% if is_popup %}<input type="hidden" name="_popup" value="1">{% endif %}
+    <div><label for="ponyglot-prefix">{% translate "Content type" %}</label>
+      <select id="ponyglot-prefix" name="prefix" onchange="this.form.submit()">
+        <option value="">{% translate "All" %}</option>
+        {% for kind in kinds %}<option value="{{ kind.prefix }}"{% if kind.prefix == prefix %} selected{% endif %}>{{ kind.label|capfirst }}</option>{% endfor %}
+      </select></div>
+    <div><label for="ponyglot-language">{% translate "Language" %}</label>
+      <select id="ponyglot-language" name="language" onchange="this.form.submit()">
+        <option value="">{% translate "All" %}</option>
+        {% for lang in languages %}<option value="{{ lang.code }}"{% if lang.code == language %} selected{% endif %}>{{ lang.name }}</option>{% endfor %}
+      </select></div>
+    <noscript><button type="submit" class="button">{% translate "Filter" %}</button></noscript>
+  </form>
+
+  {% if cloud_error %}<p class="errornote">{{ cloud_error }}</p>
+  {% elif not rows %}
+    <div class="done">🎉 <strong>{% if first_page %}{% translate "No more documents need attention." %}{% else %}{% translate "All documents are up to date." %}{% endif %}</strong></div>
+  {% else %}
+    <form id="ponyglot-documents" method="post" action="{{ action_query }}">{% csrf_token %}
+      <div class="actions">
+        <label>{% translate "Action:" %}
+          <select name="action">
+            <option value="translate">{% if language %}{% translate "Translate the selected documents (this language)" %}{% else %}{% translate "Translate the selected documents" %}{% endif %}</option>
+            {% if can_apply %}<option value="apply">{% translate "Apply their waiting translations" %}</option>{% endif %}
+          </select></label>
+        <button type="submit" class="button">{% translate "Run" %}</button>
+      </div>
+      <table>
+        <thead><tr>
+          <th><input type="checkbox" aria-label="{% translate 'Select all' %}" onclick="for (const box of this.form.querySelectorAll('input[name=keys]')) box.checked = this.checked"></th>
+          <th>{% translate "Document" %}</th>
+          {% for lang in shown_languages %}<th>{{ lang.name }} <span class="muted">{{ lang.code|upper }}</span></th>{% endfor %}
+        </tr></thead>
+        <tbody>
+        {% for row in rows %}
+          <tr>
+            <td><input type="checkbox" name="keys" value="{{ row.key }}" aria-label="{{ row.label }}"></td>
+            <td>{% if row.url %}<a href="{{ row.url }}">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}
+              <span class="note muted">{{ row.kind|capfirst }}{% if row.path %} · {{ row.path }}{% endif %}</span></td>
+            {% for cell in row.cells %}
+              <td>
+                {% if cell.untranslated %}<span class="note">{% if cell.missing %}{% blocktranslate count n=cell.missing %}{{ n }} missing{% plural %}{{ n }} missing{% endblocktranslate %}{% endif %}{% if cell.missing and cell.stale %} · {% endif %}{% if cell.stale %}{% blocktranslate count n=cell.stale %}{{ n }} outdated{% plural %}{{ n }} outdated{% endblocktranslate %}{% endif %}</span>{% endif %}
+                {% if cell.to_apply %}<span class="note"><a href="{{ cell.apply_url }}">{% blocktranslate count n=cell.to_apply %}{{ n }} to apply{% plural %}{{ n }} to apply{% endblocktranslate %}</a></span>{% endif %}
+                {% if cell.with_editors %}<span class="note muted">{% blocktranslate count n=cell.with_editors %}{{ n }} in a draft{% plural %}{{ n }} in a draft{% endblocktranslate %}</span>{% endif %}
+                {% if cell.held %}<span class="note">{% if cell.held_url %}<a href="{{ cell.held_url }}" target="_blank" rel="noopener">{% endif %}{% blocktranslate count n=cell.held %}{{ n }} held by QA{% plural %}{{ n }} held by QA{% endblocktranslate %}{% if cell.held_url %} ↗</a>{% endif %}</span>{% endif %}
+                {% if not cell.untranslated and not cell.to_apply and not cell.with_editors and not cell.held %}<span class="ok">✓</span>{% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </form>
+    <p class="help">{% translate "“In a draft”: the translation was written into a draft; it is done once an editor publishes it. “Held by QA”: decide it in Ponyglot (opens in a new tab)." %}</p>
+  {% endif %}
+
+  <p class="paging">
+    {% if first_page %}<a href="{{ first_url }}">{% translate "First page" %}</a>{% endif %}
+    {% if first_page and next_url %} · {% endif %}
+    {% if next_url %}<a href="{{ next_url }}">{% translate "Next page" %} →</a>{% endif %}
+  </p>
+  <p><a href="{% url 'admin:ponyglot_translationdashboard_changelist' %}{% if is_popup %}?_popup=1{% endif %}">{% translate "Back to the dashboard" %}</a></p>
+</div>
+{% endblock %}

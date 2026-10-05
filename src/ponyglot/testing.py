@@ -82,6 +82,8 @@ class FakeCloud:
                 self.units[key] = unit
                 items.append({"external_key": key, "ok": True, "result": {}})
             return 200, {"results": items}
+        if (method, path) == ("GET", "/units"):
+            return 200, self._units_needing_work(query)
         if method == "GET" and path.startswith("/units/") and path.endswith("/status"):
             key = urllib.parse.unquote(path.removeprefix("/units/").removesuffix("/status"))
             unit = self.units.get(key)
@@ -196,6 +198,51 @@ class FakeCloud:
         if method == "GET" and path.startswith("/jobs/"):
             return 200, self.jobs[int(path.rsplit("/", 1)[1])]
         return 404, {"detail": f"not found: {method} {path}"}
+
+    def _units_needing_work(self, query):
+        prefix, language = query.get("prefix", ""), query.get("language")
+        rows = []
+        for key, unit in self.units.items():
+            if not key.startswith(prefix):
+                continue
+            writable = unit.get("writable_languages") or self.languages
+            languages = []
+            for code in self.languages:
+                if code not in writable or (language and code != language):
+                    continue
+                counts = dict.fromkeys(("missing", "stale", "review", "attention"), 0)
+                for segment in unit["segments"]:
+                    state = self.states.get((key, segment["key"], code), "missing")
+                    if state != "ok":
+                        counts[state] += 1
+                if any(counts.values()):
+                    url = f"{self.DASHBOARD}/attention/?unit={key}&language={code}"
+                    languages.append(
+                        {
+                            "code": code,
+                            **counts,
+                            "attention_url": url if counts["attention"] else "",
+                        }
+                    )
+            if languages:
+                rows.append(
+                    {
+                        "external_key": key,
+                        "label": unit.get("label", ""),
+                        "path": unit.get("path", ""),
+                        "adapter": unit.get("adapter", ""),
+                        "last_synced_at": None,
+                        "dashboard_url": f"{self.DASHBOARD}/content/{key}/",
+                        "languages": languages,
+                    }
+                )
+        start = int(query.get("cursor") or 0)
+        limit = int(query.get("limit") or 100)
+        more = start + limit < len(rows)
+        return {
+            "units": rows[start : start + limit],
+            "next_cursor": str(start + limit) if more else None,
+        }
 
     def add_result(self, unit, key, language, text, *, source, format="plain", qa=None):
         result = {

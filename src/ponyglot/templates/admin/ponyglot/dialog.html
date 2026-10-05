@@ -75,6 +75,7 @@
   {% endif %}
 
   {% if scope.kind == "site" %}
+    <p><a href="{% url 'admin:ponyglot_translationdashboard_documents' %}{{ popup_qs }}">{% translate "Which documents need attention" %} →</a></p>
     <h2>{% translate "Sync" %}</h2>
     <p>{% if last_run %}{% blocktranslate with when=last_run.finished_at|timesince %}Last sync: {{ when }} ago.{% endblocktranslate %}{% else %}{% translate "No sync has run yet." %}{% endif %}
       {% if sync_overdue %}<span class="warn">{% translate "No sync ran lately: set up python manage.py ponyglot sync (cron, or --loop 60 as a worker)." %}</span>{% endif %}</p>
@@ -84,7 +85,8 @@
       <table>
         {% for model in models %}
           <tr><td>{% if model.url %}<a href="{{ model.url }}">{{ model.name|capfirst }}</a>{% else %}{{ model.name|capfirst }}{% endif %} <span class="muted">{{ model.adapter }}</span></td>
-            <td>{% if model.waiting %}{% blocktranslate count n=model.waiting %}{{ n }} translation to apply{% plural %}{{ n }} translations to apply{% endblocktranslate %}{% endif %}</td></tr>
+            <td>{% if model.waiting %}{% blocktranslate count n=model.waiting %}{{ n }} translation to apply{% plural %}{{ n }} translations to apply{% endblocktranslate %}{% endif %}</td>
+            <td class="actions"><a href="{{ model.documents_url }}">{% translate "Documents" %}</a></td></tr>
         {% endfor %}
       </table>
     {% endif %}

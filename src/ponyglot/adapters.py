@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 
 from django.apps import apps
 from django.db import models
+from django.urls import NoReverseMatch, reverse
 from django.utils import translation
 from django.utils.text import slugify
 
@@ -139,6 +140,14 @@ class Adapter:
         """Further values to write along with `values` (e.g. derived slugs)."""
         return {}
 
+    def content_kinds(self):
+        """`[(key prefix, label)]`: the kinds of content the adapter syncs (overview filters)."""
+        return [(f"{self.name}:", self.name)]
+
+    def translation_url(self, external_key):
+        """Where editors handle an object's translations in the admin, or ""."""
+        return ""
+
 
 def detect_format(model_field, value, label):
     """`html` for rich-text fields and markup values, else `plain`; `FIELD_FORMATS` wins."""
@@ -212,6 +221,25 @@ class ModelAdapter(Adapter):
             for model in self.models()
             if model._meta.label_lower not in excluded and self.fields(model)
         ]
+
+    def content_kinds(self):
+        return [
+            (f"{self.name}:{model._meta.label_lower}:", str(model._meta.verbose_name_plural))
+            for model in self.synced_models()
+        ]
+
+    def translation_url(self, external_key):
+        """The object's Ponyglot dialog (admins with `PonyglotAdminMixin`), else its change page."""
+        obj = self.get_object(external_key)
+        if obj is None:
+            return ""
+        info = obj._meta.app_label, obj._meta.model_name
+        for view in ("ponyglot_object", "change"):
+            try:
+                return reverse("admin:{}_{}_{}".format(*info, view), args=[obj.pk])
+            except NoReverseMatch:
+                continue
+        return ""
 
     def owner_models(self):
         return self.synced_models()
