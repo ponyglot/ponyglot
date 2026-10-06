@@ -35,5 +35,5 @@ test-django:  ## Run the tests on one combination: make test-django PY=3.10 DJAN
 	@echo "--- Python $(PY), Django $(DJANGO)"
 	uv run --no-project --isolated --python $(PY) --with-editable . \
 		--with "django==$(DJANGO).*" --with pytest --with pytest-django \
-		--with django-parler --with django-modeltranslation \
+		--with django-parler --with django-modeltranslation --with polib \
 		python -m pytest -q -p no:cacheprovider
