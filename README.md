@@ -2,7 +2,6 @@
 
 [![PyPI](https://img.shields.io/pypi/v/ponyglot)](https://pypi.org/project/ponyglot/)
 [![Coverage](https://codecov.io/gh/ponyglot/ponyglot/branch/main/graph/badge.svg)](https://codecov.io/gh/ponyglot/ponyglot)
-[![Python versions](https://img.shields.io/pypi/pyversions/ponyglot)](https://pypi.org/project/ponyglot/)
 [![Django versions](https://img.shields.io/pypi/frameworkversions/django/ponyglot)](https://www.djangoproject.com/)
 
 Ponyglot core: one translation layer for your Django stack. This package holds the API client,
