@@ -8,6 +8,7 @@
     {% for key in keys %}<input type="hidden" name="keys" value="{{ key }}">{% endfor %}
     <input type="hidden" name="action" value="translate">
     <input type="hidden" name="confirm" value="1">
+    {% if publish_requested %}<input type="hidden" name="publish" value="1">{% endif %}
   </form>
   <div class="submit-row">
     <button type="submit" form="ponyglot-confirm" class="button default">{% translate "Translate" %}</button>

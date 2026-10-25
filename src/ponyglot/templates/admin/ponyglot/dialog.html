@@ -56,13 +56,14 @@
               {% if can_apply %}<form method="post" action="{{ scope.urls.apply }}">{% csrf_token %}<input type="hidden" name="language" value="{{ lang.code }}"><button type="submit" class="button default">{% translate "Apply" %}</button></form>{% endif %}
             {% endif %}
             {% if lang.untranslated and not lang.translating %}
-              <form method="post" action="{{ scope.urls.translate }}">{% csrf_token %}<input type="hidden" name="languages" value="{{ lang.code }}"><button type="submit" class="button">{% translate "Translate" %}</button></form>
+              <form method="post" action="{{ scope.urls.translate }}">{% csrf_token %}<input type="hidden" name="languages" value="{{ lang.code }}">{% include "admin/ponyglot/partials/publish_field.html" %}<button type="submit" class="button">{% translate "Translate" %}</button></form>
             {% endif %}
           {% endif %}
         </td>
       </tr>
     {% endfor %}
   </table>
+  {% if not translating and translate_languages %}{% include "admin/ponyglot/partials/publish_choice.html" %}{% endif %}
   {% if languages|length and can_apply %}<p class="help">{% translate "“Apply” writes the translations into your content right away (texts with QA errors excepted: review them first)." %}</p>{% endif %}
 
   {% if scope.kind == "site" %}
@@ -125,7 +126,8 @@
   {# One form per general action with all its fields; the footer buttons submit them via form="…" #}
   {# (django CMS submits them with form.submit(): a button's own name/value isn't sent). #}
   <form id="ponyglot-translate" method="post" action="{{ scope.urls.translate }}">{% csrf_token %}
-    {% for code in translate_languages %}<input type="hidden" name="languages" value="{{ code }}">{% endfor %}</form>
+    {% for code in translate_languages %}<input type="hidden" name="languages" value="{{ code }}">{% endfor %}
+    {% include "admin/ponyglot/partials/publish_field.html" %}</form>
   <form id="ponyglot-fetch" method="post" action="{{ scope.urls.fetch }}">{% csrf_token %}</form>
   {# General actions only, buttons only: django CMS' modal pulls them into its footer. #}
   <div class="submit-row">

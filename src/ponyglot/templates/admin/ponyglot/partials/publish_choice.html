@@ -1,0 +1,6 @@
+{% load i18n %}{% if publish.offered %}
+<p class="ponyglot-publish">
+  <label><input type="checkbox" id="ponyglot-publish"{% if publish.checked %} checked{% endif %} onchange="for (const field of document.querySelectorAll('input[name=publish]')) field.value = this.checked ? '1' : ''"> {% translate "Publish the translation right away" %}</label>
+  <span class="help">{% if publish.per_document %}{% translate "Where you may publish: as you, once it arrives, unless a quality check finds an error or the draft has other changes. Otherwise it waits as a draft for review." %}{% else %}{% translate "As you, once it arrives, unless a quality check finds an error or the draft has other changes. Otherwise it waits as a draft for review." %}{% endif %}</span>
+</p>
+{% endif %}

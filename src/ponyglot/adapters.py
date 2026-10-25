@@ -139,6 +139,11 @@ class Adapter:
         """The suggestion status once written to `obj` (see `applied_status`)."""
         return self.applied_status
 
+    def can_publish(self, user, obj, language=None):
+        """Whether `user` may publish `obj`'s translation (into `language`; None: any) right
+        away on request (`ponyglot.publishing`). Adapters that can't publish say no."""
+        return False
+
     def slug_values(self, obj, language, values):
         """Further values to write along with `values` (e.g. derived slugs)."""
         return {}
@@ -410,10 +415,23 @@ class ModelAdapter(Adapter):
         except Exception:  # noqa: BLE001 (a broken get_absolute_url must not stop the sync)
             return ""
 
-    def deliver(self, results):
-        from .suggestions import store_results
+    def can_publish(self, user, obj, language=None):
+        """Writing a model's fields makes them live: the editor needs to change the model and
+        apply suggestions."""
+        meta = type(obj)._meta
+        return bool(
+            user
+            and user.is_active
+            and user.has_perm(f"{meta.app_label}.change_{meta.model_name}")
+            and user.has_perm("ponyglot.change_suggestion")
+        )
 
-        return store_results(self, results)
+    def deliver(self, results):
+        from .suggestions import publish_requested, store_results
+
+        handled = store_results(self, results)
+        publish_requested(self, results)
+        return handled
 
 
 class Registry:

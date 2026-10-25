@@ -126,6 +126,12 @@ class Client:
     def delete_unit(self, external_key):
         self.request("DELETE", f"/units/{urllib.parse.quote(external_key, safe='')}")
 
+    def unit_keys(self, prefix=None, cursor=None, limit=500):
+        """One page of every live unit of the site (`{"units", "next_cursor"}`), without
+        counts."""
+        params = {"prefix": prefix, "cursor": cursor, "limit": limit}
+        return self.request("GET", "/units/keys", params=params)
+
     def unit_status(self, external_key):
         return self.request("GET", f"/units/{urllib.parse.quote(external_key, safe='')}/status")
 

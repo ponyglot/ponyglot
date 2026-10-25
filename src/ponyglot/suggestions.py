@@ -5,6 +5,7 @@ from typing import NamedTuple
 
 from django.db import transaction
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from .fingerprint import fingerprint
 from .models import Suggestion, SuggestionStatus
@@ -73,8 +74,9 @@ class Applied(NamedTuple):
     blocked: int  # QA errors, text unchanged, not confirmed
 
 
-def apply(suggestions, user=None, texts=None, *, confirm_errors=False):
+def apply(suggestions, user=None, texts=None, *, confirm_errors=False, published=False):
     """Write pending suggestions to their objects. `texts`: `{suggestion pk: edited text}`.
+    `published`: written on the requesting editor's behalf without review (ADR 0022).
 
     Suggestions whose source changed since translation are marked outdated instead (the cloud
     retranslates them after the next push). Suggestions with QA errors are only applied if
@@ -90,7 +92,7 @@ def apply(suggestions, user=None, texts=None, *, confirm_errors=False):
             )
     applied = outdated = blocked = 0
     now = timezone.now()
-    for (_, external_key, language), group in groups.items():
+    for (_adapter, external_key, language), group in groups.items():
         adapter = adapter_for(group[0])
         obj = adapter.get_object(external_key) if adapter else None
         with transaction.atomic():
@@ -114,6 +116,8 @@ def apply(suggestions, user=None, texts=None, *, confirm_errors=False):
                 values.update(adapter.slug_values(obj, language, values))
                 adapter.write(obj, language, values)
             status = adapter.status_after_write(obj) if done else None
+            if published:
+                status = SuggestionStatus.PUBLISHED
             for suggestion in done:
                 suggestion.status = status
                 suggestion.decided_at = now
@@ -172,16 +176,56 @@ def reject(suggestions, user=None):
     return count
 
 
+def publish_requested(adapter, results):
+    """Apply the results whose editor asked to publish them right away (model adapters: the
+    object's fields are live once written), as that editor (see `ponyglot.publishing`)."""
+    from . import publishing
+
+    groups = defaultdict(list)
+    for result in results:
+        groups[(result["unit"], result["language"])].append(result)
+    for (external_key, language), group in groups.items():
+        user, reason = publishing.editor(group)
+        if user is None:
+            if reason:
+                publishing.not_published(external_key, language, reason)
+            continue
+        obj = adapter.get_object(external_key)
+        if obj is None:
+            continue
+        if not adapter.can_publish(user, obj, language):
+            publishing.not_published(
+                external_key, language, _("the editor may not publish it (any more)")
+            )
+            continue
+        pending = list(
+            Suggestion.objects.filter(
+                result_id__in=[result["id"] for result in group], status=SuggestionStatus.PENDING
+            )
+        )
+        outcome = apply(pending, user, published=True)
+        if outcome.outdated or outcome.blocked:
+            publishing.not_published(
+                external_key, language, _("some texts changed or can't be applied")
+            )
+
+
 def unreported():
     return Suggestion.objects.filter(
-        status__in=[SuggestionStatus.APPLIED, SuggestionStatus.REJECTED], reported_at=None
+        status__in=[
+            SuggestionStatus.APPLIED,
+            SuggestionStatus.REJECTED,
+            SuggestionStatus.PUBLISHED,
+        ],
+        reported_at=None,
     )
 
 
 def review_payload(suggestion):
     if suggestion.status == SuggestionStatus.REJECTED:
         return {"id": suggestion.result_id, "outcome": "rejected"}
-    review = {"id": suggestion.result_id, "outcome": "approved"}
+    outcome = "published" if suggestion.status == SuggestionStatus.PUBLISHED else "approved"
+    review = {"id": suggestion.result_id, "outcome": outcome}
     if suggestion.final_text and suggestion.final_text != suggestion.text:
         review["text"] = suggestion.final_text
     if suggestion.decided_by_id:

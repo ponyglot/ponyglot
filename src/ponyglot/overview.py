@@ -4,6 +4,9 @@ per language, with a link to where it's handled and bulk actions to close the ga
 
 The cloud knows each document's state (`GET /units`); this site adds what it knows locally:
 translations waiting here to be applied, and changes not sent yet.
+
+Shared by the Django admin and other admins (wagtail-ponyglot's Wagtail dashboard): links into
+the Django admin are left out when it isn't installed.
 """
 
 from django.conf import settings
@@ -12,13 +15,13 @@ from django.contrib.admin.options import IS_POPUP_VAR
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count
 from django.template.response import TemplateResponse
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.utils.http import urlencode
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 
+from . import publishing, sync
 from . import suggestions as service
-from . import sync
 from .adapters import registry
 from .client import APIError, Client, ConfigurationError
 from .conf import get_config
@@ -26,6 +29,15 @@ from .models import Suggestion, SuggestionStatus, SyncState
 
 PAGE_SIZE = 50
 ACTIONS = ("translate", "apply")
+CONFIRM_TEMPLATE = "admin/ponyglot/documents_confirm.html"
+
+
+def admin_url(name):
+    """A Django admin URL, or "" where the Django admin isn't installed (e.g. Wagtail only)."""
+    try:
+        return reverse(name)
+    except NoReverseMatch:
+        return ""
 
 
 def content_kinds():
@@ -68,7 +80,7 @@ def _rows(units, languages, language_filter):
         .annotate(n=Count("id"))
     }
     kinds = content_kinds()
-    review_url = reverse("admin:ponyglot_suggestion_changelist")
+    review_url = admin_url("admin:ponyglot_suggestion_changelist")
     codes = [
         lang["code"] for lang in languages if not language_filter or lang["code"] == language_filter
     ]
@@ -89,9 +101,9 @@ def _rows(units, languages, language_filter):
                     "stale": counts.get("stale", 0),
                     "to_apply": to_apply,
                     "apply_url": f"{review_url}?"
-                    + urlencode(
-                        {"external_key": key, "language": code, "status__exact": "pending"}
-                    ),
+                    + urlencode({"external_key": key, "language": code, "status__exact": "pending"})
+                    if review_url
+                    else "",
                     # Delivered, but not here as suggestions: in a draft (django CMS, Wagtail).
                     "with_editors": max(counts.get("review", 0) - to_apply, 0),
                     "held": counts.get("attention", 0),
@@ -167,7 +179,7 @@ def context(request):
             unsent.filter(external_key__startswith=prefix),
             failed.filter(external_key__startswith=prefix),
         )
-    sync_states = reverse("admin:ponyglot_syncstate_changelist")
+    sync_states = admin_url("admin:ponyglot_syncstate_changelist")
     return {
         "title": _("Documents that need attention"),
         "kinds": [{"prefix": p, "label": label} for p, label in content_kinds()],
@@ -182,16 +194,19 @@ def context(request):
         "next_url": query(cursor=next_cursor) if next_cursor else "",
         "unsent": unsent.count(),
         "failed": failed.count(),
-        "failed_url": f"{sync_states}?{urlencode({'error__gt': ''})}",
+        "failed_url": f"{sync_states}?{urlencode({'error__gt': ''})}" if sync_states else "",
         "action_query": query(cursor=cursor or "") or "?",
         "can_apply": request.user.has_perm("ponyglot.change_suggestion"),
+        # Permission is checked per document when its translation arrives.
+        "publish": {"offered": True, "checked": publishing.default(), "per_document": True},
         "is_popup": IS_POPUP_VAR in request.GET,
     }
 
 
-def action(request):
+def action(request, *, confirm_template=CONFIRM_TEMPLATE):
     """Run the bulk action (POST `action`) on the selected documents; returns a response or
-    None (back to the list)."""
+    None (back to the list). Translations above the cloud's threshold render
+    `confirm_template` first."""
     name = request.POST.get("action", "")
     if name not in ACTIONS:
         messages.warning(request, _("Choose an action."))
@@ -203,7 +218,7 @@ def action(request):
         return None
     try:
         if name == "translate":
-            return _translate(request, keys, language)
+            return _translate(request, keys, language, confirm_template)
         if name == "apply":
             _apply(request, keys, language)
     except (APIError, ConfigurationError) as error:
@@ -211,11 +226,11 @@ def action(request):
     return None
 
 
-def _translate(request, keys, language):
+def _translate(request, keys, language, confirm_template=CONFIRM_TEMPLATE):
     """Send the documents' changes, then request their translation."""
     client = Client()
     sync.push(client, sync.Report(), keys=keys)
-    payload = {"type": "translate", "units": keys}
+    payload = {"type": "translate", "units": keys, **publishing.job_options(request)}
     if language:
         payload["languages"] = [language]
     if request.POST.get("confirm"):
@@ -227,11 +242,12 @@ def _translate(request, keys, language):
             raise
         return TemplateResponse(
             request,
-            "admin/ponyglot/documents_confirm.html",
+            confirm_template,
             {
                 "title": _("Confirm translation"),
                 "estimate": error.data.get("estimate", {}),
                 "keys": keys,
+                "publish_requested": publishing.requested(request),
                 "action_url": request.get_full_path(),
                 "back_url": request.get_full_path(),
                 "is_popup": IS_POPUP_VAR in request.GET,

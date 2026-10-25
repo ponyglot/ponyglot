@@ -11,6 +11,13 @@ First release: the Django library that connects a site to Ponyglot. Requires Dja
 - `ponyglot backfill` sends existing content once; existing translations are imported, so
   nothing is translated twice.
 - `ponyglot check`, `status` and `translate` (`--estimate`, `--wait`).
+- **Publish right away** (cloud ADR 0022): editors may ask, when requesting a translation of
+  one object or of selected documents, for it to be published as them when it arrives
+  (`PUBLISH_BY_DEFAULT` pre-ticks it); QA errors, missing permissions or other changes in the
+  draft keep it for review, and the sync report says why. Reported as `published`; adapters
+  implement `can_publish()` (`ponyglot.publishing` has the shared rules).
+- `ponyglot prune` lists units in Ponyglot whose object doesn't exist on the site (a restored
+  or reseeded database); `--yes` deletes them. Needs the cloud's `GET /units/keys`.
 - Sync rounds are recorded (Ponyglot › Sync runs, the last 100), also when editors fetch the
   translations of one object or model.
 - System checks: missing API key, source language, `API_URL` not ending in `/v1`
@@ -45,6 +52,9 @@ First release: the Django library that connects a site to Ponyglot. Requires Dja
   translations. Page-like content comes first (django CMS, then Wagtail;
   `Adapter.overview_order`), then the models. Changes not sent yet and failed sends are counted. Needs the cloud's
   `GET /units`.
+- The documents overview and the dashboard's dialog work without the Django admin (no links
+  into it then) and take the confirmation template as a parameter: other admins reuse them
+  (wagtail-ponyglot's Wagtail dashboard).
 
 ### gettext catalogs (`ponyglot po sync`)
 

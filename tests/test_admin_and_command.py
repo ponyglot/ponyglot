@@ -123,6 +123,41 @@ def test_sync_and_backfill(command, cloud, article, product):
     assert "2 objects queued" in output and "unchanged 2" in output
 
 
+def orphan(cloud, key, label="Gone"):
+    """A unit the cloud has, e.g. from another database pushing to the same site."""
+    cloud.units[key] = {"external_key": key, "label": label, "segments": []}
+
+
+def test_prune_lists_then_deletes_units_whose_object_is_gone(command, cloud, api, article):
+    sync.run(api)
+    gone = f"parler:testapp.article:{article.pk + 100}"
+    orphan(cloud, gone, "Old pricing")
+    orphan(cloud, "gettext:django")  # no such adapter here
+    Suggestion.objects.create(
+        result_id="r1", adapter="parler", external_key=gone, field="title", language="de", text="x"
+    )
+
+    output = command("prune")
+    assert f"{gone}  Old pricing" in output and "Run with --yes" in output
+    assert "1 'gettext' unit(s) left alone" in output
+    assert cloud.deleted == []
+
+    assert "1 unit(s) deleted in Ponyglot." in command("prune", "--yes")
+    assert cloud.deleted == [gone]
+    assert Suggestion.objects.get(external_key=gone).status == "outdated"
+    assert parler.external_key(article) in cloud.units
+    assert "Nothing to prune." in command("prune")
+
+
+def test_prune_leaves_an_adapter_alone_when_none_of_its_objects_exist(command, cloud, article):
+    orphan(cloud, "modeltranslation:testapp.product:998")
+    output = command("prune", "--yes")
+    assert "None of the 'modeltranslation' units exist here" in output
+    assert cloud.deleted == []
+    command("prune", "--adapter", "modeltranslation", "--yes")
+    assert cloud.deleted == ["modeltranslation:testapp.product:998"]
+
+
 def test_translate_needs_confirmation_for_large_jobs(command, cloud, api, article):
     sync.run(api)
     cloud.confirm_above = 10

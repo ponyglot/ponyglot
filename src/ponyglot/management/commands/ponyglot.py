@@ -26,6 +26,12 @@ class Command(BaseCommand):
         backfill.add_argument(
             "--dry-run", action="store_true", help="only count units, segments and characters"
         )
+        prune = actions.add_parser(
+            "prune",
+            help="List units in Ponyglot whose object no longer exists here; --yes deletes them.",
+        )
+        prune.add_argument("--adapter", action="append", help="only this adapter (repeatable)")
+        prune.add_argument("--yes", action="store_true", help="delete them in Ponyglot")
         run = actions.add_parser("sync", help="Push changes, report reviews, pull translations.")
         run.add_argument("--loop", type=int, metavar="SECONDS", help="repeat every SECONDS")
         run.add_argument("--no-pull", action="store_true", help="don't fetch translations")
@@ -89,6 +95,29 @@ class Command(BaseCommand):
         count = sync.backfill(options.get("adapter"))
         self.stdout.write(f"{count} objects queued. Pushing…")
         self.do_sync(client, no_pull=True)
+
+    def do_prune(self, client, adapter=None, yes=False, **options):
+        result = sync.prune(client, adapter, delete=yes)
+        for key, label in result.orphans:
+            self.stdout.write(f"{key}  {label}")
+        for name in result.kept:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"! None of the '{name}' units exist here: is this the right database? "
+                    f"Left alone; `--adapter {name}` includes them."
+                )
+            )
+        for prefix, count in result.unknown.items():
+            self.stdout.write(f"{count} '{prefix}' unit(s) left alone: no such adapter here.")
+        if yes:
+            self.stdout.write(f"{result.deleted} unit(s) deleted in Ponyglot.")
+        elif result.orphans:
+            self.stdout.write(
+                f"{len(result.orphans)} unit(s) don't exist here. Run with --yes to delete them "
+                "in Ponyglot."
+            )
+        else:
+            self.stdout.write("Nothing to prune.")
 
     def do_sync(self, client, loop=None, no_pull=False, **options):
         stopping = []

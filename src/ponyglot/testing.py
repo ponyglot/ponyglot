@@ -82,6 +82,20 @@ class FakeCloud:
                 self.units[key] = unit
                 items.append({"external_key": key, "ok": True, "result": {}})
             return 200, {"results": items}
+        if (method, path) == ("GET", "/units/keys"):
+            keys = [k for k in self.units if k.startswith(query.get("prefix", ""))]
+            start = int(query.get("cursor") or 0)
+            limit = int(query.get("limit") or 500)
+            page = [
+                {
+                    "external_key": k,
+                    "label": self.units[k].get("label", ""),
+                    "adapter": self.units[k].get("adapter", ""),
+                }
+                for k in keys[start : start + limit]
+            ]
+            more = start + limit < len(keys)
+            return 200, {"units": page, "next_cursor": str(start + limit) if more else None}
         if (method, path) == ("GET", "/units"):
             return 200, self._units_needing_work(query)
         if method == "GET" and path.startswith("/units/") and path.endswith("/status"):
@@ -167,6 +181,8 @@ class FakeCloud:
                 "units": payload.get("units"),
                 "prefix": payload.get("prefix", ""),
                 "languages": payload.get("languages") or self.languages,
+                "publish": bool(payload.get("publish")),
+                "publish_as": payload.get("publish_as", ""),
                 "done_segments": 0,
                 "failed_segments": 0,
                 "errors": [],
@@ -246,8 +262,20 @@ class FakeCloud:
         }
 
     def add_result(
-        self, unit, key, language, text, *, source, format="plain", qa=None, replaces=""
+        self,
+        unit,
+        key,
+        language,
+        text,
+        *,
+        source,
+        format="plain",
+        qa=None,
+        replaces="",
+        publish_as="",
     ):
+        """A finished translation; `publish_as`: its job asked to publish it right away as that
+        editor (the connector's user id)."""
         result = {
             "id": f"r_{next(self._ids)}",
             "unit": unit,
@@ -261,6 +289,8 @@ class FakeCloud:
             "job_id": 1,
             "qa": qa or [],
             "replaces": replaces,
+            "publish": bool(publish_as),
+            "publish_as": str(publish_as),
         }
         self.results.append(result)
         return result

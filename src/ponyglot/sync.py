@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from django.db import transaction
 from django.utils import timezone
 
-from . import exclusions, notifications, state
+from . import exclusions, notifications, publishing, state
 from .adapters import registry
 from .client import APIError, Client
 from .conf import get_config
@@ -90,6 +90,64 @@ def estimate(adapter_names=None):
             segments += len(unit.segments)
             characters += sum(len(segment.text) for segment in unit.segments)
     return units, segments, characters
+
+
+@dataclass
+class Pruning:
+    orphans: list = field(default_factory=list)  # (external key, label)
+    deleted: int = 0
+    unknown: dict = field(default_factory=dict)  # key prefix → units no adapter here knows
+    kept: list = field(default_factory=list)  # adapters whose every unit would go (skipped)
+
+
+def prune(client, adapter_names=None, *, delete=False):
+    """Find the cloud's units whose object doesn't exist on this site (a restored or reseeded
+    database, content deleted while the connector wasn't installed), and with `delete` remove
+    them in the cloud.
+
+    Units of adapters not installed here are left alone. So is every unit of an adapter whose
+    objects are all missing (more likely a wrong database or settings than deleted content),
+    unless the adapter is named in `adapter_names`.
+    """
+    result = Pruning()
+    units, cursor = [], None
+    while True:
+        page = client.unit_keys(cursor=cursor)
+        units += page["units"]
+        cursor = page.get("next_cursor")
+        if not cursor:
+            break
+    totals, orphans = {}, {}
+    for unit in units:
+        key = unit["external_key"]
+        adapter = registry.for_key(key)
+        if adapter is None:
+            prefix = key.split(":", 1)[0]
+            result.unknown[prefix] = result.unknown.get(prefix, 0) + 1
+            continue
+        if adapter_names and adapter.name not in adapter_names:
+            continue
+        totals[adapter.name] = totals.get(adapter.name, 0) + 1
+        try:
+            missing = adapter.get_object(key) is None
+        except NotImplementedError:
+            continue
+        if missing:
+            orphans.setdefault(adapter.name, []).append((key, unit.get("label") or ""))
+    for name, found in orphans.items():
+        if len(found) == totals[name] and not (adapter_names and name in adapter_names):
+            result.kept.append(name)
+            continue
+        result.orphans += found
+    if delete:
+        for key, _ in result.orphans:
+            client.delete_unit(key)
+            Suggestion.objects.filter(external_key=key, status=SuggestionStatus.PENDING).update(
+                status=SuggestionStatus.OUTDATED, decided_at=timezone.now()
+            )
+            SyncState.objects.filter(external_key=key).delete()
+            result.deleted += 1
+    return result
 
 
 def push(client, report, keys=None, prefix=None):
@@ -209,8 +267,9 @@ def pull(client, report, unit=None, prefix=None):
         if adapter is None:
             report.undeliverable[prefix] = len(results)
             continue
-        with transaction.atomic():
+        with transaction.atomic(), publishing.collect() as notes:
             handled = adapter.deliver(results)
+        report.warnings += notes
         if handled:
             client.acknowledge(handled)
             report.delivered += len(handled)

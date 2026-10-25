@@ -34,6 +34,8 @@ class SuggestionStatus(models.TextChoices):
     # Written into a draft (django CMS, Wagtail); applied/rejected when it's published/discarded.
     DRAFTED = "drafted", _("In a draft")
     APPLIED = "applied", _("Applied")
+    # Published right away on the requesting editor's behalf, without review (ADR 0022).
+    PUBLISHED = "published", _("Published without review")
     REJECTED = "rejected", _("Rejected")
     SUPERSEDED = "superseded", _("Superseded")
     OUTDATED = "outdated", _("Source changed")

@@ -37,7 +37,7 @@ from django.utils.http import urlencode
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 
-from . import exclusions, state, sync
+from . import exclusions, overview, publishing, state, sync
 from . import suggestions as service
 from .adapters import registry
 from .client import APIError, Client, ConfigurationError
@@ -100,7 +100,8 @@ class Scope:
             params["external_key"] = self.key
         elif self.prefix:
             params["external_key__startswith"] = self.prefix
-        return f"{reverse('admin:ponyglot_suggestion_changelist')}?{urlencode(params)}"
+        url = overview.admin_url("admin:ponyglot_suggestion_changelist")
+        return f"{url}?{urlencode(params)}" if url else ""
 
     def last_fetch(self):
         if self.key or self.prefix:
@@ -220,18 +221,26 @@ def dialog_context(request, scope):
         "fetch_due": overdue(scope.last_fetch()),
         "all_done": bool(languages) and all(lang["done"] for lang in languages),
         "can_apply": request.user.has_perm("ponyglot.change_suggestion"),
+        # Only for one object: a model's or the site's run isn't a choice to publish unreviewed.
+        "publish": publishing.choice(request.user, scope.adapter, scope.obj)
+        if scope.kind == "object"
+        else {"offered": False},
         "is_popup": popup,
         "popup_qs": f"?{IS_POPUP_VAR}=1" if popup else "",
     }
 
 
-def dialog_action(request, scope, action):
-    """translate / apply / fetch for a scope; returns a response or None (redirect back)."""
+CONFIRM_TEMPLATE = "admin/ponyglot/dialog_confirm.html"
+
+
+def dialog_action(request, scope, action, *, confirm_template=CONFIRM_TEMPLATE):
+    """translate / apply / fetch for a scope; returns a response or None (redirect back).
+    Translations above the cloud's threshold render `confirm_template` first."""
     if request.method != "POST":
         return None
     try:
         if action == "translate":
-            return _translate(request, scope)
+            return _translate(request, scope, confirm_template)
         if action == "fetch":
             report = scope.refresh(Client())
             messages.success(
@@ -250,7 +259,7 @@ def dialog_action(request, scope, action):
     return None
 
 
-def _translate(request, scope):
+def _translate(request, scope, confirm_template=CONFIRM_TEMPLATE):
     """Send what changed (objects never sent included), then request translation."""
     client = Client()
     if scope.obj is not None and not SyncState.objects.filter(external_key=scope.key).exists():
@@ -273,6 +282,13 @@ def _translate(request, scope):
         payload["languages"] = languages
     if request.POST.get("confirm"):
         payload["confirm"] = True
+    publish = (
+        scope.kind == "object"
+        and publishing.requested(request)
+        and scope.adapter.can_publish(request.user, scope.obj)
+    )
+    if publish:
+        payload.update(publishing.job_options(request))
     try:
         job = client.create_job(**payload)
     except APIError as error:
@@ -281,24 +297,28 @@ def _translate(request, scope):
         popup = IS_POPUP_VAR in request.GET
         return TemplateResponse(
             request,
-            "admin/ponyglot/dialog_confirm.html",
+            confirm_template,
             {
                 "title": _("Confirm translation"),
                 "scope": scope,
                 "estimate": error.data.get("estimate", {}),
                 "languages": languages,
+                "publish_requested": publish,
                 "is_popup": popup,
                 "popup_qs": f"?{IS_POPUP_VAR}=1" if popup else "",
             },
         )
-    messages.success(
-        request,
-        _(
+    if publish:
+        message = _(
+            "Translation requested (%(segments)s texts). It is published as you when it arrives, "
+            "unless a quality check finds an error."
+        )
+    else:
+        message = _(
             "Translation requested (%(segments)s texts). The translations arrive as suggestions "
             "to apply."
         )
-        % {"segments": job.get("estimated_segments", 0)},
-    )
+    messages.success(request, message % {"segments": job.get("estimated_segments", 0)})
     return None
 
 

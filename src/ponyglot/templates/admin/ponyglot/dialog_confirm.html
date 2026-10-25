@@ -7,6 +7,7 @@
   <form id="ponyglot-confirm" method="post" action="{{ scope.urls.translate }}">{% csrf_token %}
     {% for code in languages %}<input type="hidden" name="languages" value="{{ code }}">{% endfor %}
     <input type="hidden" name="confirm" value="1">
+    {% if publish_requested %}<input type="hidden" name="publish" value="1">{% endif %}
   </form>
   <div class="submit-row">
     <button type="submit" form="ponyglot-confirm" class="button default">{% translate "Translate" %}</button>

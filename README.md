@@ -48,6 +48,19 @@ python manage.py ponyglot sync            # push changes, report reviews, fetch 
 python manage.py ponyglot sync --loop 60  # the same, every 60 seconds (worker process)
 ```
 
+Deleting an object deletes its unit in Ponyglot with the next sync. Units whose object
+disappeared otherwise (a restored or reseeded database, a second database pushing to the same
+site) stay in Ponyglot and show up in overviews without a link. `ponyglot prune` lists them,
+`--yes` deletes them:
+
+```sh
+python manage.py ponyglot prune         # units in Ponyglot whose object doesn't exist here
+python manage.py ponyglot prune --yes   # delete them in Ponyglot
+```
+
+Units of adapters that aren't installed are left alone, and so are all units of an adapter if
+none of its objects exist here (likely the wrong database); `--adapter <name>` includes them.
+
 ## Translate and review
 
 ```sh
@@ -62,6 +75,18 @@ text, the current translation and a diff. Edit if needed, then **Apply** or **Re
 bulk actions). A suggestion whose source changed in the meantime can't be applied; it is
 translated again. The next sync reports your decisions, and approved texts (including your
 corrections) feed the translation memory.
+
+## Publish right away
+
+When an editor requests a translation of one object (its dialog) or of selected documents
+(the dashboard), they can tick **Publish the translation right away**. It's offered to editors
+who may publish the content (models: change permission and `ponyglot.change_suggestion`);
+`PUBLISH_BY_DEFAULT = True` pre-ticks it. When the translation arrives, the sync applies it in
+the editor's name, unless a QA check found an error, the editor lost the permission, or (CMS
+drafts) the draft has other changes; then it waits for review as usual and the sync report
+says why. Such translations are reported as *published without review*: the translation memory
+only learns them once someone confirms them in Ponyglot. Not offered for a model's or the
+site's "translate everything".
 
 ## In the admin: translation dialogs and dashboard
 
@@ -135,6 +160,7 @@ absolute link to the admin.
 | `SITE_URL` | – | e.g. `https://example.com`, for links in emails |
 | `TIMEOUT` | `30` | seconds per request |
 | `BATCH_SIZE` | `50` | units per push (≤ 100) |
+| `PUBLISH_BY_DEFAULT` | `False` | pre-tick *Publish the translation right away*, see above |
 
 ## Translated slugs
 

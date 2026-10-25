@@ -180,3 +180,36 @@ def test_pages_run_through_the_systems_in_order(admin_client, page_systems, monk
         url = URL + html_lib.unescape(found.group(1)) if found else ""
     assert labels[:3] == ["Home", "About", "Blog"]  # django CMS, Wagtail, then the models
     assert len(labels) == 5
+
+
+def test_works_without_the_django_admin(rf, settings, api, cloud_docs, article):
+    """Other admins (wagtail-ponyglot) reuse the overview: no links into a Django admin."""
+    from ponyglot import overview
+    from ponyglot.translations_admin import Scope
+
+    article_key, _ = keys(article)
+    cloud_docs.add_result(article_key, "title", "de", "Preise", source="Pricing")
+    sync.run(api)
+    cloud_docs.states[(article_key, "title", "de")] = "review"
+    settings.ROOT_URLCONF = "tests.urls_without_admin"
+    request = rf.get("/")
+    request.user = User.objects.create_superuser("root", "root@example.com", "pw")
+    context = overview.context(request)
+    cell = next(row for row in context["rows"] if row["key"] == article_key)["cells"][0]
+    assert (cell["to_apply"], cell["apply_url"]) == (1, "")
+    assert context["failed_url"] == ""
+    assert Scope(title="Site").review_url("de") == ""
+
+
+def test_selected_documents_can_be_published_right_away(admin_client, cloud_docs, article):
+    """ADR 0022: whether the editor may publish each one is checked when it arrives."""
+    article_key, _ = keys(article)
+    assert "Publish the translation right away" in admin_client.get(URL).content.decode()
+    cloud_docs.confirm_above = 0
+    page = admin_client.post(URL, {"action": "translate", "keys": [article_key], "publish": "1"})
+    assert 'name="publish" value="1"' in page.content.decode()
+    admin_client.post(
+        URL, {"action": "translate", "keys": [article_key], "publish": "1", "confirm": "1"}
+    )
+    [job] = cloud_docs.jobs.values()
+    assert (job["publish"], job["publish_as"]) == (True, str(User.objects.get().pk))

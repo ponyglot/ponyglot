@@ -61,6 +61,7 @@
           </select></label>
         <button type="submit" class="button">{% translate "Run" %}</button>
       </div>
+      {% include "admin/ponyglot/partials/publish_choice.html" %}{% include "admin/ponyglot/partials/publish_field.html" %}
       {% include "admin/ponyglot/partials/documents_table.html" with selectable=True %}
     </form>
     <p class="help">{% translate "“In a draft”: the translation was written into a draft; it is done once an editor publishes it. “Held by QA”: decide it in Ponyglot (opens in a new tab)." %}</p>

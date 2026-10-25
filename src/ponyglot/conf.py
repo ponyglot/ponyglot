@@ -19,6 +19,8 @@ Optional keys:
 - `SITE_URL`: e.g. `https://example.com`, to put absolute admin links in emails.
 - `TIMEOUT`: seconds per API request (default 30).
 - `BATCH_SIZE`: units per push request (default 50, at most 100).
+- `PUBLISH_BY_DEFAULT`: whether "Publish the translation right away" starts ticked when an
+  editor requests a translation (default False; see `ponyglot.publishing`).
 """
 
 from dataclasses import dataclass
@@ -42,6 +44,7 @@ class Config:
     site_url: str
     timeout: float
     batch_size: int
+    publish_by_default: bool
 
 
 def _label(value):
@@ -65,4 +68,5 @@ def get_config():
         site_url=(options.get("SITE_URL") or "").rstrip("/"),
         timeout=float(options.get("TIMEOUT", 30)),
         batch_size=max(1, min(100, int(options.get("BATCH_SIZE", 50)))),
+        publish_by_default=bool(options.get("PUBLISH_BY_DEFAULT", False)),
     )
