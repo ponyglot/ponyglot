@@ -12,8 +12,8 @@ contract is the cloud's API v1 (ponyglot-cloud `docs/api.md`); its fingerprint r
 ## Decision
 
 1. **Versions**: Django ≥ 5.2 (LTS) *(decided by the owner, 2026-09-28)*, Python ≥ 3.10 (Django
-   6.0 itself needs 3.12+). `make matrix` tests Django 5.2 on Python 3.10 and 3.14, and 6.0 on
-   3.12 and 3.14. No runtime dependency besides Django: the HTTP client uses the standard
+   6.0 and 6.1 need 3.12+). `make matrix` tests Django 5.2 on Python 3.10 and 3.14, 6.0 on
+   3.12 and 3.14, and 6.1 on 3.12 and 3.15. No runtime dependency besides Django: the HTTP client uses the standard
    library.
 2. **Settings**: one `PONYGLOT` dict. Only `API_KEY` is required; the source language defaults
    to `LANGUAGE_CODE`, target languages to `LANGUAGES`. System checks report problems.

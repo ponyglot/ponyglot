@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "ponyglot"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Ponyglot core: one translation layer for your Django stack (API client, sync, django-parler and django-modeltranslation adapters)."
 readme = "README.md"
 license = "BSD-3-Clause"
@@ -17,6 +17,7 @@ classifiers = [
   "Framework :: Django",
   "Framework :: Django :: 5.2",
   "Framework :: Django :: 6.0",
+  "Framework :: Django :: 6.1",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
@@ -24,6 +25,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Topic :: Software Development :: Localization",
 ]
 
@@ -45,6 +47,7 @@ dev = [
   "django-parler>=2.3",
   "polib>=1.2",
   "pytest>=8",
+  "pytest-cov>=6",
   "pytest-django>=4.9",
   "ruff>=0.12",
 ]
@@ -53,6 +56,11 @@ dev = [
 DJANGO_SETTINGS_MODULE = "tests.settings"
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["ponyglot"]
+branch = true
+omit = ["*/migrations/*"]
 
 [tool.ruff]
 line-length = 100

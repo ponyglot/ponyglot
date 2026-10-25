@@ -1,5 +1,10 @@
 # ponyglot
 
+[![PyPI](https://img.shields.io/pypi/v/ponyglot)](https://pypi.org/project/ponyglot/)
+[![Coverage](https://codecov.io/gh/ponyglot/ponyglot/branch/main/graph/badge.svg)](https://codecov.io/gh/ponyglot/ponyglot)
+[![Python versions](https://img.shields.io/pypi/pyversions/ponyglot)](https://pypi.org/project/ponyglot/)
+[![Django versions](https://img.shields.io/pypi/frameworkversions/django/ponyglot)](https://www.djangoproject.com/)
+
 Ponyglot core: one translation layer for your Django stack. This package holds the API client,
 the sync, the review admin and the **django-parler** and **django-modeltranslation** adapters.
 The django CMS and Wagtail connectors (`djangocms-ponyglot`, `wagtail-ponyglot`) build on it.
@@ -206,7 +211,7 @@ has `FakeCloud`, an in-memory API for tests: `Client(transport=FakeCloud())`.
 ```sh
 make install   # uv sync
 make check     # ruff, migrations check, tests (SQLite, no services needed)
-make matrix    # tests on Django 5.2 and 6.0 across Python 3.10–3.14
+make matrix    # tests on Django 5.2, 6.0 and 6.1 across Python 3.10–3.15
 ```
 
 Design decisions: [docs/decisions](docs/decisions/). License: BSD-3-Clause.
