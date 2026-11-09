@@ -199,6 +199,23 @@ branch and commit the result to a review branch: merging is the approval. The ne
 the translations in the catalogs and reports them approved (changed wording as corrections).
 With `--fuzzy`, new translations are flagged fuzzy and count as approved once the flag is gone.
 
+Languages with more or fewer than two plural forms (Polish, Russian, Arabic, Japanese, …) get
+every form translated, each with the counts it's used for (from the catalog's `Plural-Forms`).
+Translations whose placeholders `compilemessages` would refuse (`%(name)s`, `{name}`) are
+written as fuzzy, with a warning.
+
+`ponyglot po check` needs no API key and fails when translations are missing, fuzzy or have
+broken placeholders, e.g. in CI:
+
+```console
+$ ponyglot po check locale
+locale/de/LC_MESSAGES/django.po: 2 untranslated, 1 fuzzy
+2 catalog file(s) checked: 1 need work.
+```
+
+In a Django project, `python manage.py ponyglot po sync` and `… po check` take the catalogs in
+`LOCALE_PATHS` and the key from the `PONYGLOT` setting.
+
 ## For connector authors
 
 Adapters subclass `ponyglot.adapters.Adapter` (see `ModelAdapter` and djangocms-ponyglot), set

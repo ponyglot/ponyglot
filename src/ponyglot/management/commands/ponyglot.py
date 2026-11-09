@@ -1,8 +1,11 @@
-"""`manage.py ponyglot …`: connect, sync, backfill, status and translation jobs."""
+"""`manage.py ponyglot …`: connect, sync, backfill, status and translation jobs; `po sync` and
+`po check` for the gettext catalogs in `LOCALE_PATHS`."""
 
+import argparse
 import signal
 import time
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from ponyglot import sync
@@ -44,8 +47,14 @@ class Command(BaseCommand):
         translate.add_argument("--estimate", action="store_true", help="only show the cost")
         translate.add_argument("--yes", action="store_true", help="confirm large jobs")
         translate.add_argument("--wait", action="store_true", help="wait until the job is done")
+        po = actions.add_parser("po", help="gettext catalogs (.po) in LOCALE_PATHS.")
+        from ponyglot.cli import add_po_actions
+
+        add_po_actions(po, locale_help="locale directories (default: LOCALE_PATHS)")
 
     def handle(self, *args, action, **options):
+        if action == "po":
+            return self.po(options)
         if not registry.all():
             raise CommandError(
                 "No adapter installed: add e.g. 'ponyglot.contrib.parler' to INSTALLED_APPS."
@@ -82,6 +91,31 @@ class Command(BaseCommand):
             self.style.SUCCESS(f"Connected to site “{site.get('name')}”.")
             + f" Target languages: {', '.join(writable) or 'none writable'}"
         )
+
+    def po(self, options):
+        try:
+            import polib  # noqa: F401
+        except ImportError as error:
+            raise CommandError('polib is missing: pip install "ponyglot[gettext]"') from error
+        from ponyglot import po
+        from ponyglot.cli import run_po
+
+        locale_dirs = options["locale_dirs"] or [str(path) for path in settings.LOCALE_PATHS]
+        if not locale_dirs:
+            raise CommandError("LOCALE_PATHS is empty: name the locale directories.")
+        try:
+            ok = run_po(
+                argparse.Namespace(**options),
+                locale_dirs=locale_dirs,
+                source_language=options["source_language"] or get_config().source_language,
+                client=Client,
+                out=self.stdout,
+                err=self.stderr,
+            )
+        except (ConfigurationError, APIError, po.POError) as error:
+            raise CommandError(str(error)) from error
+        if not ok:
+            raise CommandError("Some catalogs need work.")
 
     def estimate(self, options):
         units, segments, characters = sync.estimate(options.get("adapter"))

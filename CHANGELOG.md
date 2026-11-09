@@ -72,6 +72,16 @@ First release: the Django library that connects a site to Ponyglot. Requires Dja
 - Updates of approved translations (results with `replaces`, after an edit in the cloud's
   translation memory) are written while the catalog still has the replaced text, and approved
   once merged. `FakeCloud.add_result(…, replaces=…)`.
+- Plurals for every language: languages without two plural forms get a unit of their own per
+  catalog (`…:plurals:<language>`) with one segment per form, whose context and notes say which
+  counts it is for (from `Plural-Forms`).
+- Translations with placeholders `compilemessages` would refuse (`python-format`,
+  `python-brace-format`) are written as fuzzy, with a warning.
+- `ponyglot po check` (no API key needed) fails when translations are missing, fuzzy or have
+  broken placeholders, for CI.
+- `manage.py ponyglot po sync|check` for Django projects: the catalogs in `LOCALE_PATHS`, the
+  key from the `PONYGLOT` setting.
+- With `--fuzzy`, both forms of a plural are kept (the second no longer cleared the first).
 
 ### Control
 
